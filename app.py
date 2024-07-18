@@ -1,8 +1,17 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
+from googleapiclient.discovery import build
+import requests
+from bs4 import BeautifulSoup
+import re
+import openai
+
 app = Flask(__name__)
 CORS(app)
+
+
+openai.api_key = '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'
 
 def generate_email(professor_info):
     return f"Hello Professor {professor_info['name']},\n\nI am NOT INTERESTED in your work on {professor_info['research_interests']}.\n\nBest Regards,\n[Your Name]"
