@@ -1,9 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from rq import Queue
-from worker import conn
-
 import scholarpage
 
 from googleapiclient.discovery import build
@@ -17,10 +14,6 @@ CORS(app)
 
 
 openai.api_key = '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'
-
-# Initialize the Redis Queue
-q = Queue(connection=conn)
-
 # Initialize Google Custom Search API
 def google_search(search_term, api_key, cse_id, **kwargs):
     service = build("customsearch", "v1", developerKey=api_key)
@@ -197,33 +190,22 @@ def openai_response(prompt):
 
 '''
 
-def generate_emails(email_template, names, professor_interest):
-    email_messages = final_together(email_template, names, professor_interest)
-    return email_messages
-
 @app.route('/generate-email', methods=['POST'])
 def generate_email_endpoint():
     data = request.get_json()
     print("Received data:", data)
     professor_info = {
         "email_template": data.get('email_template'),
-        "names": data.get('names'),
+        "names": data.get('names'),  # Change to "names" to match the JSON array
         "professor_interest": data.get('professor_interest'),
     }
     print("Professor info:", professor_info)
 
-    job = q.enqueue(generate_emails, professor_info['email_template'], professor_info['names'], professor_info['professor_interest'])
-    
-    return jsonify({"job_id": job.get_id()}), 202
+    professor_names = professor_info['names']  # Directly use the array
 
-@app.route('/job-status/<job_id>', methods=['GET'])
-def job_status(job_id):
-    job = q.fetch_job(job_id)
-    if job.is_finished:
-        return jsonify(job.result), 200
-    else:
-        return jsonify({"status": "Processing"}), 202
+    email_messages = final_together(professor_info['email_template'], professor_names, professor_info['professor_interest'])
 
+    return jsonify(email_messages)
 
 if __name__ == '__main__':
     app.run(debug=True)
