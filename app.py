@@ -46,6 +46,8 @@ def scrape_professor_publications(professor_name, professor_interest):
     cse_id = "96fd38a2a138e4738"
     search_term = f"{professor_name} {professor_interest} information"
 
+    print(f"Searching for {search_term}...")
+
     # Perform Google Custom Search
     results = google_search(search_term, api_key, cse_id, num=3)
 
@@ -53,7 +55,7 @@ def scrape_professor_publications(professor_name, professor_interest):
 
     for result in results:
         url = result['link']
-        print(f"Scraping {url}...")
+        #print(f"Scraping {url}...")
         text = scrape_website_text(url)
         all_scraped_text += f"URL: {url}\n\n{text}\n\n" + "#" * 100 + "\n\n"
     cleaned_content = cleanText(all_scraped_text)
@@ -105,8 +107,10 @@ def summarize_text(scraped_content, professor_interest):
 def replace_unsupported_characters(text):
     return text.encode('utf-8', errors='replace').decode('utf-8', errors='ignore')
 
-def final_together(email_template, professor_names, filename, professor_interest):
+def final_together(email_template, professor_names, professor_interest):
     email_messages = []
+
+    print("Professor names: ", professor_names)
 
     for professor_name in professor_names: 
         scraped_content = scrape_professor_publications(professor_name, professor_interest)
@@ -157,13 +161,14 @@ def final_together(email_template, professor_names, filename, professor_interest
             temperature=1
         )
         
-
-
         email_messages.append({"Professor Name": professor_name, 
                                #"Subject Line": subject_line.choices[0].message['content'],
                                "Email Content": completion.choices[0].message['content']})
         print(completion.choices[0].message['content'])
 
+    return email_messages
+
+'''
 
 def openai_response(prompt):
     system_msg = 'You are an assistant. Answer the questions that are asked.'
@@ -183,21 +188,24 @@ def openai_response(prompt):
     )
     return completion.choices[0].message['content']
 
-def generate_email(professor_info):
-    return openai_response(professor_info['prompt'])
+'''
 
 @app.route('/generate-email', methods=['POST'])
 def generate_email_endpoint():
-    data = request.get_json()  # Use request.get_json() to parse the JSON data
-    print("Received data:", data)  # Debugging line to print received data
+    data = request.get_json()
+    print("Received data:", data)
     professor_info = {
-        "name": data.get('name'),
-        "prompt": data.get('prompt'),
-        "research_interests": data.get('research_interests'),
+        "email_template": data.get('email_template'),
+        "names": data.get('names'),  # Change to "names" to match the JSON array
+        "professor_interest": data.get('professor_interest'),
     }
-    print("Professor info:", professor_info)  # Debugging line to print professor info
-    email = generate_email(professor_info)
-    return email
+    print("Professor info:", professor_info)
+
+    professor_names = professor_info['names']  # Directly use the array
+
+    email_messages = final_together(professor_info['email_template'], professor_names, professor_info['professor_interest'])
+
+    return jsonify(email_messages)
 
 if __name__ == '__main__':
     app.run(debug=True)
