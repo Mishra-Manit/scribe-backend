@@ -55,7 +55,7 @@ def scrape_professor_publications(professor_name, professor_interest):
 
     for result in results:
         url = result['link']
-        #print(f"Scraping {url}...")
+        print(f"Scraping {url}...")
         text = scrape_website_text(url)
         all_scraped_text += f"URL: {url}\n\n{text}\n\n" + "#" * 100 + "\n\n"
     cleaned_content = cleanText(all_scraped_text)
@@ -100,7 +100,7 @@ def summarize_text(scraped_content, professor_interest):
         except Exception as e:
            print(f"Error summarizing text chunk: {e}")
 
-    #print("Here is the entire summarized text: ", summarized_text.strip())
+    print("Here is the entire summarized text: ", summarized_text.strip())
     return summarized_text.strip() 
 
 
