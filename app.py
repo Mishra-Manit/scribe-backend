@@ -132,7 +132,7 @@ def final_together(email_template, professor_name, professor_interest):
     user_msg2 = '''
     This is the cold email template you need to fill out for Professor {}: {}
 
-    Do not change the original template text, dont add extra paragraphs.
+    Do not change the original template text, dont add extra paragraphs. DO NOT put extra text than the template provided. Do not give a subject line for the email.
 
     This email is for a {} professor. 
 
