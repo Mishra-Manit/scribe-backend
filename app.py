@@ -89,7 +89,7 @@ def summarize_chunk(chunk, professor_interest):
 
 def summarize_text(scraped_content, professor_interest):
 
-    CHUNK_SIZE = 30000
+    CHUNK_SIZE = 45000
     summarized_text = ""
     chunks = [scraped_content[i:i+CHUNK_SIZE] for i in range(0, len(scraped_content), CHUNK_SIZE)]
 
@@ -107,88 +107,64 @@ def summarize_text(scraped_content, professor_interest):
 def replace_unsupported_characters(text):
     return text.encode('utf-8', errors='replace').decode('utf-8', errors='ignore')
 
-def final_together(email_template, professor_names, professor_interest):
+def final_together(email_template, professor_name, professor_interest):
     email_messages = []
 
-    print("Professor names: ", professor_names)
+    print("Professor name: ", professor_name)
+    scraped_content = scrape_professor_publications(professor_name, professor_interest)
+    cleaned_content = summarize_text(scraped_content, professor_interest)
 
-    for professor_name in professor_names: 
-        scraped_content = scrape_professor_publications(professor_name, professor_interest)
-        cleaned_content = summarize_text(scraped_content, professor_interest)
+    author_profile = scholarpage.search_for_author_exact_match(professor_name)
 
-        author_profile = scholarpage.search_for_author_exact_match(professor_name)
+    text_from_scholarly = " "
 
-        text_from_scholarly = " "
+    if author_profile:
+        top_cited_papers = scholarpage.get_top_cited_papers(author_profile)
+        for title, citations in top_cited_papers:
+            text_from_scholarly += f"Title: {title}, Citations: {citations}\n"
 
-        if author_profile:
-            top_cited_papers = scholarpage.get_top_cited_papers(author_profile)
-            for title, citations in top_cited_papers:
-                text_from_scholarly += f"Title: {title}, Citations: {citations}\n"
+    else:
+        text_from_scholarly = "Not available, replace this with information from google scrape"
+    #text from scholarly: ", text_from_scholarly)
+    #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
 
-        else:
-            text_from_scholarly = "Not available, replace this with information from google scrape"
-        #text from scholarly: ", text_from_scholarly)
-        #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
+    system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
+    user_msg2 = '''
+    This is the cold email template you need to fill out for Professor {}: {}
 
-        system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
-        user_msg2 = '''
-        This is the cold email template you need to fill out for Professor {}: {}
+    Do not change the original template text, dont add extra paragraphs.
 
-        Do not change the original template text, dont add extra paragraphs.
+    This email is for a {} professor. 
 
-        This email is for a {} professor. 
+    Keep the email sounding the same as my writing and make it sound like it was written by me. Do not call this email an application. This email should be ready to be sent to the professor, so make sure to keep it that way. Do not make your own version for the ending of the message.
 
-        Keep the email sounding the same as my writing and make it sound like it was written by me. Do not call this email an application. This email should be ready to be sent to the professor, so make sure to keep it that way. Do not make your own version for the ending of the message.
+    ONLY alter the areas of the template that are in brackets. Do not change the rest of the email template text, just put the information that needs to be added. Make sure to actually add publication titles whereever applicable.
 
-        ONLY alter the areas of the template that are in brackets. Do not change the rest of the email template text, just put the information that needs to be added. Make sure to actually add publication titles whereever applicable.
+    After generating the email, double check that the voice of the email matches my writing and if it doesnt, rewrite the email. Also double check that all the information mentioned can be backed up with evidence as I am sending these emails directly to professors. Make it sound like a human (tone: conversational, 50 percent spartan) and rewrite.
 
-        After generating the email, double check that the voice of the email matches my writing and if it doesnt, rewrite the email. Also double check that all the information mentioned can be backed up with evidence as I am sending these emails directly to professors. Make it sound like a human (tone: conversational, 50 percent spartan) and rewrite.
+    If the text provided is -Not available, replace this with information from google scrape.- do not write that sentence in the final email. Delete the sentence. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.
 
-        If the text provided is -Not available, replace this with information from google scrape.- do not write that sentence in the final email. Delete the sentence. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.
+    Papers: {}
 
-        Papers: {}
-
-        More information about the professor:
-        {}
-        '''.format(professor_name, email_template, professor_interest, text_from_scholarly, cleaned_content)
-
-        completion = openai.ChatCompletion.create(
-            model="gpt-4o-2024-05-13",
-            messages=[
-                {"role": "system", "content": system_msg2},
-                {"role": "user", "content": user_msg2}
-            ],
-            temperature=1
-        )
-        
-        email_messages.append({"Professor Name": professor_name, 
-                               #"Subject Line": subject_line.choices[0].message['content'],
-                               "Email Content": completion.choices[0].message['content']})
-        print(completion.choices[0].message['content'])
-
-    return email_messages
-
-'''
-
-def openai_response(prompt):
-    system_msg = 'You are an assistant. Answer the questions that are asked.'
-    user_msg = prompt
+    More information about the professor:
+    {}
+    '''.format(professor_name, email_template, professor_interest, text_from_scholarly, cleaned_content)
 
     completion = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
+        model="gpt-4o-2024-05-13",
         messages=[
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg}
+            {"role": "system", "content": system_msg2},
+            {"role": "user", "content": user_msg2}
         ],
-        temperature=0.5,
-        max_tokens=2048,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0
+        temperature=1
     )
-    return completion.choices[0].message['content']
+    
+    email_messages.append({"Professor Name": professor_name, 
+                            #"Subject Line": subject_line.choices[0].message['content'],
+                            "Email Content": completion.choices[0].message['content']})
+    print(completion.choices[0].message['content'])
 
-'''
+    return email_messages
 
 @app.route('/generate-email', methods=['POST'])
 def generate_email_endpoint():
@@ -196,16 +172,14 @@ def generate_email_endpoint():
     print("Received data:", data)
     professor_info = {
         "email_template": data.get('email_template'),
-        "names": data.get('names'),  # Change to "names" to match the JSON array
+        "name": data.get('name'),  # Expecting one professor name per request
         "professor_interest": data.get('professor_interest'),
     }
-    print("Professor info:", professor_info)
+    print("Professor info name:", professor_info['name'])
 
-    professor_names = professor_info['names']  # Directly use the array
+    email_message = final_together(professor_info['email_template'], professor_info['name'], professor_info['professor_interest'])
 
-    email_messages = final_together(professor_info['email_template'], professor_names, professor_info['professor_interest'])
-
-    return jsonify(email_messages)
+    return jsonify(email_message)
 
 if __name__ == '__main__':
     app.run(debug=True)
