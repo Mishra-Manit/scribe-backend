@@ -91,7 +91,7 @@ def summarize_chunk(chunk, professor_interest):
 
 def summarize_text(scraped_content, professor_interest):
 
-    CHUNK_SIZE = 250000
+    CHUNK_SIZE = 500000
     summarized_text = ""
     chunks = [scraped_content[i:i+CHUNK_SIZE] for i in range(0, len(scraped_content), CHUNK_SIZE)]
 
