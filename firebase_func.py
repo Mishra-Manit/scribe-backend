@@ -4,20 +4,22 @@ from firebase_admin import db
 
 cred_obj = firebase_admin.credentials.Certificate("coldemail-db-firebase-adminsdk-gn3cr-b1e821699b.json")
 default_app = firebase_admin.initialize_app(cred_obj, {
-	'databaseURL': "https://coldemail-db-default-rtdb.firebaseio.com/"
-	})
+    'databaseURL': "https://coldemail-db-default-rtdb.firebaseio.com/"
+})
 
-
-
-"""
-import json
-with open("book_info.json", "r") as f:
-	file_contents = json.load(f)
-ref.set(file_contents)
-"""
+def get_next_request_number():
+    ref = db.reference("/requests")
+    requests = ref.get()
+    if not requests:
+        return 1
+    else:
+        last_request_number = max([int(key.split('#')[1]) for key in requests.keys() if key.startswith('Request #')])
+        return last_request_number + 1
 
 def send_email_to_firebase(professor_name, professor_interest, email_message):
-    ref = db.reference("/requests").push()
+    next_request_number = get_next_request_number()
+    request_key = f"Request #{next_request_number}"
+    ref = db.reference(f"/requests/{request_key}")
     ref.set({
         "professor_name": professor_name,
         "professor_interest": professor_interest,
