@@ -51,7 +51,7 @@ def scrape_professor_publications(professor_name, professor_interest):
     print(f"Searching for {search_term}...")
 
     # Perform Google Custom Search
-    results = google_search(search_term, api_key, cse_id, num=3)
+    results = google_search(search_term, api_key, cse_id, num=2)
 
     all_scraped_text = ""
 
