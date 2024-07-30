@@ -13,12 +13,12 @@ def get_next_request_number():
     if not requests:
         return 1
     else:
-        last_request_number = max([int(key.split('#')[1]) for key in requests.keys() if key.startswith('Request #')])
+        last_request_number = max([int(key.split('_')[1]) for key in requests.keys() if key.startswith('Request_')])
         return last_request_number + 1
 
 def send_email_to_firebase(professor_name, professor_interest, email_message):
     next_request_number = get_next_request_number()
-    request_key = f"Request #{next_request_number}"
+    request_key = f"Request_{next_request_number}"
     ref = db.reference(f"/requests/{request_key}")
     ref.set({
         "professor_name": professor_name,
