@@ -17,9 +17,10 @@ ref.set(file_contents)
 """
 
 def send_email_to_firebase(professor_name, professor_interest, email_message):
-    ref = db.reference(f"/requests/{professor_interest}_professor").push()
+    ref = db.reference("/requests").push()
     ref.set({
         "professor_name": professor_name,
+        "professor_interest": professor_interest,
         "email_message": email_message
     })
     return "Email sent to Firebase"
