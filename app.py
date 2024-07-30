@@ -9,6 +9,8 @@ from bs4 import BeautifulSoup
 import re
 import openai
 
+from firebase_func import send_email_to_firebase
+
 app = Flask(__name__)
 CORS(app)
 
@@ -163,6 +165,7 @@ def final_together(email_template, professor_name, professor_interest):
                             #"Subject Line": subject_line.choices[0].message['content'],
                             "Email Content": completion.choices[0].message['content']})
     print(completion.choices[0].message['content'])
+    send_email_to_firebase(professor_name, professor_interest, completion.choices[0].message['content'])
 
     return email_messages
 
