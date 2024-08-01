@@ -120,6 +120,8 @@ def final_together(email_template, professor_name, professor_interest):
 
     text_from_scholarly = " "
 
+    print("Author profile: ", author_profile)
+
     if author_profile:
         top_cited_papers = scholarpage.get_top_cited_papers(author_profile)
         for title, citations in top_cited_papers:
@@ -127,7 +129,7 @@ def final_together(email_template, professor_name, professor_interest):
 
     else:
         text_from_scholarly = "Not available, replace this with information from google scrape"
-    #text from scholarly: ", text_from_scholarly)
+    print("text from scholarly: ", text_from_scholarly)
     #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
 
     system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
