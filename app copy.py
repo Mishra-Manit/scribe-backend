@@ -11,13 +11,61 @@ import openai
 
 from firebase_func import send_email_to_firebase
 
+import os
+import base64
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from email.mime.text import MIMEText
+
+# Scopes for Gmail API
+SCOPES = ['https://www.googleapis.com/auth/gmail.compose']
+
 app = Flask(__name__)
 CORS(app)
 
 print("Testing file started")
 
+def authenticate_gmail():
+    """Authenticate the user and return the Gmail service."""
+    creds = None
+    # Token file stores user credentials
+    if os.path.exists('token.json'):
+        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    # If there are no valid credentials, let the user log in
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', SCOPES)
+            creds = flow.run_local_server(port=0)
+        # Save the credentials for future use
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+    return build('gmail', 'v1', credentials=creds)
 
-openai.api_key = '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'
+def create_message(sender, to, subject, body_text):
+    """Create a MIME email message."""
+    message = MIMEText(body_text)
+    message['to'] = to
+    message['from'] = sender
+    message['subject'] = subject
+    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
+    return {'raw': raw_message}
+
+def create_draft(service, user_id, message_body):
+    """Create a draft email."""
+    try:
+        draft = service.users().drafts().create(userId=user_id, body={'message': message_body}).execute()
+        print(f"Draft created: {draft['id']}")
+        return draft
+    except Exception as error:
+        print(f"An error occurred: {error}")
+        return None
+
+
+openai.api_key = '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'
 # Initialize Google Custom Search API
 def google_search(search_term, api_key, cse_id, **kwargs):
     service = build("customsearch", "v1", developerKey=api_key)
@@ -53,7 +101,7 @@ def scrape_professor_publications(professor_name, professor_interest):
     print(f"Searching for {search_term}...")
 
     # Perform Google Custom Search
-    results = google_search(search_term, api_key, cse_id, num=3)
+    results = google_search(search_term, api_key, cse_id, num=2)
 
     all_scraped_text = ""
 
@@ -68,7 +116,7 @@ def scrape_professor_publications(professor_name, professor_interest):
 def summarize_chunk(chunk, professor_interest):
     system_msg = 'You are an assistant summarizer. Extract the key information out of the text block provided to you.'
     user_msg = f'''
-    I need anything academic related that this professor has received or teaches. DO NOT capture specific names of publications. Gather all of the general information about the professor and put in a summarized format. Write a good and concise summary about the professor through the below text provided.
+    I need anything academic related that this professor has received or teaches. Make sure to capture exact names of books and publications as well as the years they came out. Gather all of that information and put in a summarized format. Make sure to keep whole titles for everything. Write a good and concise summary about the professor through the below text provided.
     
     This email is for a {professor_interest} professor.
 
@@ -82,8 +130,8 @@ def summarize_chunk(chunk, professor_interest):
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg}
         ],
-        temperature=0.2,
-        max_tokens=16384,
+        temperature=0.5,
+        max_tokens=2048,
         top_p=1,
         frequency_penalty=0,
         presence_penalty=0
@@ -92,7 +140,8 @@ def summarize_chunk(chunk, professor_interest):
 
 
 def summarize_text(scraped_content, professor_interest):
-    CHUNK_SIZE = 500000
+
+    CHUNK_SIZE = 300000
     summarized_text = ""
     chunks = [scraped_content[i:i+CHUNK_SIZE] for i in range(0, len(scraped_content), CHUNK_SIZE)]
 
@@ -124,32 +173,34 @@ def final_together(email_template, professor_name, professor_interest):
     #print("Author profile: ", author_profile)
 
     if author_profile:
-        top_papers = scholarpage.get_top_cited_and_recent_papers(author_profile)
-        for title, citations, year in top_papers:
-            text_from_scholarly += f"Title: {title}, Citations: {citations}, Year: {year}\n"
+        top_cited_papers = scholarpage.get_top_cited_papers(author_profile)
+        for title, citations in top_cited_papers:
+            text_from_scholarly += f"Title: {title}, Citations: {citations}\n"
+
     else:
         text_from_scholarly = "Not available, replace this with information from google scrape"
-
     print("text from scholarly: ", text_from_scholarly)
     #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
 
-    system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. Parts of the template you have to replace with be inside "[]". Fill out that section of the template based on what is being asked. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
+    system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
     user_msg2 = '''
     This is the cold email template you need to fill out for Professor {}: {}
 
-    Do not add extra paragraphs. Do not give a subject line for the email.
+    Do not change the original template text, dont add extra paragraphs. DO NOT put extra text than the template provided. Do not give a subject line for the email.
 
     This email is for a {} professor. 
 
     Keep the email sounding the same as my writing and make it sound like it was written by me. Do not call this email an application. This email should be ready to be sent to the professor, so make sure to keep it that way. Do not make your own version for the ending of the message.
 
-    ONLY alter the areas of the template that are in "[]". Do not change the rest of the email template text, just put the information that needs to be added. Is is VERY IMPORTANT to add publication titles whereever applicable.
+    ONLY alter the areas of the template that are in brackets. Do not change the rest of the email template text, just put the information that needs to be added. Make sure to actually add publication titles whereever applicable.
 
     After generating the email, double check that the voice of the email matches my writing and if it doesnt, rewrite the email. Also double check that all the information mentioned can be backed up with evidence as I am sending these emails directly to professors. Make it sound like a human (tone: conversational, 50 percent spartan) and rewrite.
 
-    Papers information: {}
+    If the text provided is -Not available, replace this with information from google scrape.- do not write that sentence in the final email. Delete the sentence. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.
 
-    General information about the professor:
+    Papers: {}
+
+    More information about the professor:
     {}
     '''.format(professor_name, email_template, professor_interest, text_from_scholarly, cleaned_content)
 
@@ -166,6 +217,21 @@ def final_together(email_template, professor_name, professor_interest):
                             #"Subject Line": subject_line.choices[0].message['content'],
                             "Email Content": completion.choices[0].message['content']})
     print(completion.choices[0].message['content'])
+
+        # Authenticate and get the Gmail API service
+    service = authenticate_gmail()
+    
+    # Email details
+    sender = "manitsuperhero@gmail.com"
+    to = "mshmanit@gmail.com"
+    subject = professor_name
+    body_text = completion.choices[0].message['content']
+    
+    # Create message and draft
+    message = create_message(sender, to, subject, body_text)
+    create_draft(service, 'me', message)
+
+
     send_email_to_firebase(professor_name, professor_interest, completion.choices[0].message['content'])
 
     return email_messages
