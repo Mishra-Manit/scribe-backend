@@ -48,7 +48,7 @@ def cleanText(text):
 def scrape_professor_publications(professor_name, professor_interest):
     api_key = "AIzaSyD1J5WBjeWOeNTdAT5y5Cw8gztUriPRiuc"
     cse_id = "96fd38a2a138e4738"
-    search_term = f"{professor_name} {professor_interest} information"
+    search_term = f"{professor_name} {professor_interest} professor information"
 
     print(f"Searching for {search_term}...")
 
@@ -92,7 +92,7 @@ def summarize_chunk(chunk, professor_interest):
 
 
 def summarize_text(scraped_content, professor_interest):
-    CHUNK_SIZE = 500000
+    CHUNK_SIZE = 900000
     summarized_text = ""
     chunks = [scraped_content[i:i+CHUNK_SIZE] for i in range(0, len(scraped_content), CHUNK_SIZE)]
 
@@ -133,7 +133,18 @@ def final_together(email_template, professor_name, professor_interest):
     print("text from scholarly: ", text_from_scholarly)
     #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
 
-    system_msg2 = 'You are an assistant that will use information provided to you to complete a cold email template. Keep all of the same email language, tone, or style. Parts of the template you have to replace with be inside "[]". Fill out that section of the template based on what is being asked. If the text provided is -Not available, replace this with information from google scrape.- DO NOT include the details about the professors paper. Skip that sentence and reference something else.'
+    system_msg2 = '''
+    You are an assistant who will use the information provided to fill in a cold email template. Follow these rules:
+
+    1. **Preserve the template’s language, tone, and style:** You must keep the rest of the email verbatim, except for text inside square brackets "[ ]" that you must replace with relevant information. 
+    2. **Placeholders:** Any placeholder marked "-Not available, replace this with information from google scrape.-" indicates the provided data is missing or incomplete; in this case, rely on the general information about the professor to create a generic yet relevant substitution.
+    3. **Do not add extra paragraphs or a subject line:** Only edit text within "[ ]".
+    4. **Match the user’s writing style:** The final email must maintain the user’s own “voice” and feel natural, conversational, and suitably concise (50% spartan).
+    5. **Use accurate evidence:** If publications or details are mentioned, they must be correct and verifiable since the email will be sent to the professor directly.
+    6. **Final output:** Provide a complete, final email text ready to send—no notes, no additional commentary, no references to “an application,” and no disclaimers.
+    '''
+
+
     user_msg2 = '''
     This is the cold email template you need to fill out for Professor {}: {}
 
@@ -141,13 +152,16 @@ def final_together(email_template, professor_name, professor_interest):
 
     This email is for a {} professor. 
 
-    Keep the email sounding the same as my writing and make it sound like it was written by me. Do not call this email an application. This email should be ready to be sent to the professor, so make sure to keep it that way. Do not make your own version for the ending of the message.
-
+   
     ONLY alter the areas of the template that are in "[]". Do not change the rest of the email template text, just put the information that needs to be added. Is is VERY IMPORTANT to add publication titles whereever applicable.
 
     After generating the email, double check that the voice of the email matches my writing and if it doesnt, rewrite the email. Also double check that all the information mentioned can be backed up with evidence as I am sending these emails directly to professors. Make it sound like a human (tone: conversational, 50 percent spartan) and rewrite.
 
+    Keep the email sounding the same as my writing and make it sound like it was written by me. Do not call this email an application. This email should be ready to be sent to the professor, so make sure to keep it that way. 
+
     Papers information: {}
+
+    If there is a string "-Not available, replace this with information from google scrape.-" use the general information about the professor instead of the papers information and make the email generic. In the end, the result HAS TO BE a final email that can be sent to the professor.
 
     General information about the professor:
     {}
