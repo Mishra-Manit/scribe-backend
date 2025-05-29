@@ -11,11 +11,22 @@ from openai import OpenAI
 
 from firebase_func import send_email_to_firebase
 
+# Add Redis and RQ imports
+import os
+import redis
+from rq import Queue
+from rq.job import Job
+from rq.worker import Worker
+
 app = Flask(__name__)
 CORS(app)
 
 print("Testing file started")
 
+# Initialize Redis connection
+redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
+conn = redis.from_url(redis_url)
+q = Queue(connection=conn)
 
 # Initialize OpenAI client
 client = OpenAI(api_key='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')
@@ -481,9 +492,63 @@ def generate_email_endpoint():
     
     print(f"Professor name: {professor_name}, User ID: {user_id}, Source: {source}")
 
-    email_message = final_together(email_template, professor_name, professor_interest, user_id, source)
+    # Queue the job instead of processing synchronously
+    job = q.enqueue(
+        final_together,
+        email_template,
+        professor_name,
+        professor_interest,
+        user_id,
+        source,
+        job_timeout='30m'  # Allow up to 30 minutes for processing
+    )
+    
+    return jsonify({
+        "status": "queued",
+        "job_id": job.get_id(),
+        "message": f"Email generation for {professor_name} has been queued and will appear in your dashboard shortly."
+    })
 
-    return jsonify(email_message)
+@app.route('/job-status/<job_id>', methods=['GET'])
+def get_job_status(job_id):
+    """Check the status of a queued job"""
+    try:
+        job = Job.fetch(job_id, connection=conn)
+        
+        if job.is_finished:
+            return jsonify({
+                "status": "completed",
+                "result": job.result
+            })
+        elif job.is_failed:
+            return jsonify({
+                "status": "failed",
+                "error": str(job.exc_info)
+            })
+        elif job.is_started:
+            return jsonify({
+                "status": "processing"
+            })
+        else:
+            return jsonify({
+                "status": "queued"
+            })
+    except Exception as e:
+        return jsonify({
+            "status": "not_found",
+            "error": str(e)
+        }), 404
+
+@app.route('/queue-status', methods=['GET'])
+def queue_status():
+    """Get the current status of the job queue"""
+    return jsonify({
+        'queued_jobs': len(q),
+        'failed_jobs': len(q.failed_job_registry),
+        'started_jobs': len(q.started_job_registry),
+        'finished_jobs': len(q.finished_job_registry),
+        'workers': Worker.count(connection=conn)
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)
