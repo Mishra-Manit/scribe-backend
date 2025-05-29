@@ -1,28 +1,45 @@
 import firebase_admin
 from firebase_admin import credentials
-from firebase_admin import db
+from firebase_admin import firestore
+from datetime import datetime
 
-cred_obj = firebase_admin.credentials.Certificate("coldemail-db-firebase-adminsdk-gn3cr-b1e821699b.json")
-default_app = firebase_admin.initialize_app(cred_obj, {
-    'databaseURL': "https://coldemail-db-default-rtdb.firebaseio.com/"
-})
+cred_obj = firebase_admin.credentials.Certificate("coldauth-a5caf-firebase-adminsdk-fbsvc-274ef406d7.json")
+default_app = firebase_admin.initialize_app(cred_obj)
 
-def get_next_request_number():
-    ref = db.reference("/requests")
-    requests = ref.get()
-    if not requests:
-        return 1
-    else:
-        last_request_number = max([int(key.split('_')[1]) for key in requests.keys() if key.startswith('Request_')])
-        return last_request_number + 1
+# Initialize Firestore client
+db = firestore.client()
 
-def send_email_to_firebase(professor_name, professor_interest, email_message):
-    next_request_number = get_next_request_number()
-    request_key = f"Request_{next_request_number}"
-    ref = db.reference(f"/requests/{request_key}")
-    ref.set({
-        "professor_name": professor_name,
-        "professor_interest": professor_interest,
-        "email_message": email_message
-    })
-    return "Email sent to Firebase"
+def send_email_to_firebase(user_id, professor_name, professor_interest, email_message, source="generate"):
+    """
+    Save generated email to Firestore under user's emails collection
+    
+    Args:
+        user_id: The ID of the user making the request
+        professor_name: Name of the professor
+        professor_interest: Interest/field of the professor
+        email_message: Generated email content
+        source: Origin of the request (default: "generate")
+    """
+    try:
+        # Reference to the user's emails subcollection
+        user_emails_ref = db.collection('users').document(user_id).collection('emails')
+        
+        # Create email document with timestamp
+        email_doc = {
+            'professor_name': professor_name,
+            'professor_interest': professor_interest,
+            'email_message': email_message,
+            'source': source,
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'status': 'generated'  # Can be used to track email status
+        }
+        
+        # Add the document with auto-generated ID
+        user_emails_ref.add(email_doc)
+        
+        print(f"Email for {professor_name} saved to Firestore for user {user_id}")
+        return "Email sent to Firebase"
+        
+    except Exception as e:
+        print(f"Error saving email to Firebase: {e}")
+        raise e
