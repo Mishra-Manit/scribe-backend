@@ -17,6 +17,7 @@ import redis
 from rq import Queue
 from rq.job import Job
 from rq.worker import Worker
+import ssl
 
 from tasks import generate_email
 
@@ -27,7 +28,18 @@ print("Testing file started")
 
 # Initialize Redis connection
 redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-conn = redis.from_url(redis_url)
+
+# Configure Redis connection with SSL
+if redis_url.startswith('rediss://'):
+    # Create an SSL context
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    conn = redis.from_url(redis_url, ssl_cert_reqs=None)
+else:
+    conn = redis.from_url(redis_url)
+
 q = Queue(connection=conn)
 
 # Initialize OpenAI client
