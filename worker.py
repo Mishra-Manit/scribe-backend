@@ -2,8 +2,8 @@ import os
 import redis
 from rq import Worker, Queue, Connection
 
-# Import your Flask app to ensure all functions are available
-from app import final_together
+# Import the tasks module instead of app
+from tasks import generate_email
 
 listen = ['default']
 

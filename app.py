@@ -18,6 +18,8 @@ from rq import Queue
 from rq.job import Job
 from rq.worker import Worker
 
+from tasks import generate_email
+
 app = Flask(__name__)
 CORS(app)
 
@@ -494,7 +496,7 @@ def generate_email_endpoint():
 
     # Queue the job instead of processing synchronously
     job = q.enqueue(
-        final_together,
+        generate_email,
         email_template,
         professor_name,
         professor_interest,
