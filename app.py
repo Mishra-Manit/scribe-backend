@@ -301,21 +301,28 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
     email_messages = []
 
     print("Professor name: ", professor_name)
+    print("[DEBUG] Starting scrape_professor_publications")
     scraped_content = scrape_professor_publications(professor_name, professor_interest)
+    print("[DEBUG] Finished scrape_professor_publications, starting summarize_text")
     cleaned_content = summarize_text(scraped_content, professor_interest)
+    print("[DEBUG] Finished summarize_text, starting scholarpage.search_for_author_exact_match")
 
     author_profile = scholarpage.search_for_author_exact_match(professor_name)
+    print(f"[DEBUG] scholarpage.search_for_author_exact_match returned: {author_profile}")
 
     text_from_scholarly = " "
 
     #print("Author profile: ", author_profile)
 
     if author_profile:
+        print("[DEBUG] Author profile found, calling scholarpage.get_top_cited_and_recent_papers")
         top_papers = scholarpage.get_top_cited_and_recent_papers(author_profile)
+        print("[DEBUG] Finished scholarpage.get_top_cited_and_recent_papers")
         for title, citations, year in top_papers:
             text_from_scholarly += f"Title: {title}, Citations: {citations}, Year: {year}\n"
     else:
         text_from_scholarly = "NO_SCHOLARLY_DATA_AVAILABLE"
+        print("[DEBUG] No author profile found, text_from_scholarly set to NO_SCHOLARLY_DATA_AVAILABLE")
 
     print("text from scholarly: ", text_from_scholarly)
     #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
@@ -399,6 +406,7 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
             cleaned_content=cleaned_content
     )
 
+    print("[DEBUG] Starting final OpenAI API call for email generation")
     completion = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -413,6 +421,7 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
     
     # Validate the generated email
     generated_email = completion.choices[0].message.content
+    print("[DEBUG] Finished final OpenAI API call")
     cleaned_email, issues = validate_and_clean_email(generated_email, professor_name)
     
     # If there are critical issues, try to regenerate with more explicit instructions
@@ -438,6 +447,7 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
 
         Generate the corrected email:'''
         
+        print("[DEBUG] Starting OpenAI API call for email generation retry")
         retry_completion = client.chat.completions.create(
             model="gpt-4o",
             messages=[
@@ -451,6 +461,7 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
         )
         
         cleaned_email, issues = validate_and_clean_email(retry_completion.choices[0].message.content, professor_name)
+        print("[DEBUG] Finished OpenAI API call for email generation retry")
         
         if issues:
             print(f"Warning: Email still has issues after retry: {issues}")
@@ -458,7 +469,9 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
     email_messages.append({"Professor Name": professor_name, 
                             "Email Content": cleaned_email})
     print(cleaned_email)
+    print("[DEBUG] Starting send_email_to_firebase")
     send_email_to_firebase(user_id, professor_name, professor_interest, cleaned_email, source)
+    print("[DEBUG] Finished send_email_to_firebase")
 
     return email_messages
 
