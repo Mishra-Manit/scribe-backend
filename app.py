@@ -498,5 +498,32 @@ def generate_email_endpoint():
 
     return jsonify(email_message)
 
+@app.route('/call-openai', methods=['POST'])
+def call_openai_endpoint():
+    data = request.get_json()
+    
+    prompt = data.get('prompt')
+    model = data.get('model', 'gpt-4o-mini') # Default to gpt-3.5-turbo if not specified
+    max_tokens = data.get('max_tokens', 16384) # Default to 16384 tokens if not specified
+    temperature = data.get('temperature', 0.7) # Default to 0.7 if not specified
+    
+    if not prompt:
+        return jsonify({"error": "Missing prompt field"}), 400
+        
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        response_content = completion.choices[0].message.content
+        return jsonify({"response": response_content})
+    except Exception as e:
+        print(f"Error calling OpenAI: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True)
