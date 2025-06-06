@@ -298,201 +298,182 @@ def validate_and_clean_email(email_content, professor_name):
     return email_content, issues
 
 def final_together(email_template, professor_name, professor_interest, user_id, source="generate"):
-    print("\n[DEBUG] ====== Starting final_together function ======")
-    print(f"[DEBUG] Input parameters: professor_name={professor_name}, professor_interest={professor_interest}, user_id={user_id}, source={source}")
     email_messages = []
 
-    try:
-        print("\n[DEBUG] Starting web scraping phase...")
-        scraped_content = scrape_professor_publications(professor_name, professor_interest)
-        print(f"[DEBUG] Scraped content length: {len(scraped_content)} characters")
+    print("Professor name: ", professor_name)
+    print("[DEBUG] Starting scrape_professor_publications")
+    scraped_content = scrape_professor_publications(professor_name, professor_interest)
+    print("[DEBUG] Finished scrape_professor_publications, starting summarize_text")
+    cleaned_content = summarize_text(scraped_content, professor_interest)
+    print("[DEBUG] Finished summarize_text, starting scholarpage.search_for_author_exact_match")
+
+    author_profile = scholarpage.search_for_author_exact_match(professor_name)
+    print(f"[DEBUG] scholarpage.search_for_author_exact_match returned: {author_profile}")
+
+    text_from_scholarly = " "
+
+    #print("Author profile: ", author_profile)
+
+    if author_profile:
+        print("[DEBUG] Author profile found, calling scholarpage.get_top_cited_and_recent_papers")
+        top_papers = scholarpage.get_top_cited_and_recent_papers(author_profile)
+        print("[DEBUG] Finished scholarpage.get_top_cited_and_recent_papers")
+        for title, citations, year in top_papers:
+            text_from_scholarly += f"Title: {title}, Citations: {citations}, Year: {year}\n"
+    else:
+        text_from_scholarly = "NO_SCHOLARLY_DATA_AVAILABLE"
+        print("[DEBUG] No author profile found, text_from_scholarly set to NO_SCHOLARLY_DATA_AVAILABLE")
+
+    print("text from scholarly: ", text_from_scholarly)
+    #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
+
+    system_msg2 = '''You are an expert cold email writer who specializes in crafting authentic, human-like academic outreach emails. Your PRIMARY goal is to write in a natural, conversational way that perfectly matches the sender's unique writing style and tone.
+
+    WRITING PHILOSOPHY:
+    - Write like a real person, not an AI - avoid robotic or overly formal language
+    - Every email template has its own personality - study and mirror it exactly
+    - The recipient should feel like they're hearing from a genuine human who took time to research them
+    - Natural flow is more important than perfect grammar - write how people actually email
+
+    CORE RESPONSIBILITIES:
+    1. MATCH THE EXACT WRITING STYLE: Study the template's vocabulary, sentence structure, energy level, and personality
+    2. Replace ALL text within square brackets [ ] with appropriate, specific information
+    3. Preserve ALL other text in the template exactly as written
+    4. Write replacements that sound like they came from the same person who wrote the template
+    5. PRESERVE THE ORIGINAL FORMATTING - maintain paragraph breaks, line spacing, and structure
+
+    STYLE MATCHING GUIDELINES:
+    - If the template is casual and uses contractions, your replacements should too
+    - If the template is energetic with exclamation points, maintain that energy
+    - If the template is reserved and formal, keep replacements similarly professional
+    - Match the sentence length patterns - short & punchy or long & flowing
+    - Use similar vocabulary complexity as the surrounding text
+    - Ensure replacements flow seamlessly with the template text'''
+
+
+
+    user_msg2 = '''TASK: Fill in this cold email template for Professor {professor_name}, a {professor_interest} professor.
+
+    STEP 1 - ANALYZE THE WRITING STYLE:
+    Before making any replacements, carefully study the template to understand:
+    - The overall tone (casual/formal, enthusiastic/reserved, etc.)
+    - Typical sentence length and structure
+    - Vocabulary choices and complexity
+    - Use of punctuation and formatting
+    - The writer's personality that comes through
+
+    TEMPLATE TO COMPLETE:
+    {email_template}
+
+    AVAILABLE INFORMATION:
+
+    === GOOGLE SCHOLAR DATA ===
+    {text_from_scholarly}
+
+    === WEB SEARCH DATA ===
+    {cleaned_content}
+
+    CRITICAL INSTRUCTIONS FOR NATURAL WRITING:
+    1. Your replacements should sound EXACTLY like the person who wrote the template
+    2. Prioritize natural flow over perfect accuracy - write how a real person would
+    3. Use conversational transitions and connectors that match the template style
+    4. If the template is informal, your replacements should be equally informal
+    5. Avoid AI-sounding phrases like "cutting-edge", "groundbreaking", "innovative" unless the template uses similar language
+    6. Include specific publication titles, but introduce them naturally as the template writer would
+    7. PRESERVE ALL PARAGRAPH BREAKS AND FORMATTING from the original template
+
+    WRITING STYLE EXAMPLES:
+    
+    If template says: "Hey! I was blown away by [publication]..."
+    Good replacement: "Hey! I was blown away by your paper on neural networks in robotics..."
+    Bad replacement: "Hey! I was blown away by your groundbreaking research publication titled 'Neural Networks in Robotics'..."
+
+    If template says: "I found [specific aspect] particularly interesting..."
+    Good replacement: "I found your approach to handling noisy sensor data particularly interesting..."
+    Bad replacement: "I found the innovative methodology you employed particularly interesting..."
+
+    REMEMBER:
+    - Write like you're the same person who wrote the template
+    - Keep the energy level consistent throughout
+    - Make it feel genuine and personal, not like a mail merge
+    - The professor should feel like they're getting a real, thoughtful email from someone who actually read their work
+
+    Generate the complete email now, with all brackets filled naturally and authentically:'''.format(
+            professor_name=professor_name, 
+            professor_interest=professor_interest,
+            email_template=email_template, 
+            text_from_scholarly=text_from_scholarly, 
+            cleaned_content=cleaned_content
+    )
+
+    print("[DEBUG] Starting final OpenAI API call for email generation")
+    completion = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_msg2},
+            {"role": "user", "content": user_msg2}
+        ],
+        temperature=0.7,  # Lower from 1.0 for more consistent output
+        top_p=0.9,  # Add top_p for better quality
+        frequency_penalty=0.1,  # Slight penalty to avoid repetition
+        presence_penalty=0.1  # Slight penalty for more natural language
+    )
+    
+    # Validate the generated email
+    generated_email = completion.choices[0].message.content
+    print("[DEBUG] Finished final OpenAI API call")
+    cleaned_email, issues = validate_and_clean_email(generated_email, professor_name)
+    
+    # If there are critical issues, try to regenerate with more explicit instructions
+    if issues and any('bracket' in issue or 'Placeholder' in issue for issue in issues):
+        print(f"Issues detected in generated email: {issues}")
+        print("Attempting to regenerate with stricter instructions...")
         
-        print("\n[DEBUG] Starting content summarization...")
-        cleaned_content = summarize_text(scraped_content, professor_interest)
-        print(f"[DEBUG] Cleaned content length: {len(cleaned_content)} characters")
-
-        print("\n[DEBUG] Starting scholarly search phase...")
-        try:
-            print(f"[DEBUG] Calling scholarpage.search_for_author_exact_match for: {professor_name}")
-            author_profile = scholarpage.search_for_author_exact_match(professor_name)
-            print(f"[DEBUG] Author profile returned: {type(author_profile)}")
-            if author_profile:
-                print(f"[DEBUG] Author profile keys: {author_profile.keys() if isinstance(author_profile, dict) else 'Not a dictionary'}")
-        except Exception as e:
-            print(f"[DEBUG] Error in scholarly search: {str(e)}")
-            print(f"[DEBUG] Error type: {type(e)}")
-            print("[DEBUG] Setting author_profile to None due to error")
-            author_profile = None
-
-        text_from_scholarly = " "
-
-        if author_profile:
-            print("\n[DEBUG] Processing author profile for papers...")
-            try:
-                top_papers = scholarpage.get_top_cited_and_recent_papers(author_profile)
-                print(f"[DEBUG] Found {len(top_papers)} top papers")
-                for title, citations, year in top_papers:
-                    text_from_scholarly += f"Title: {title}, Citations: {citations}, Year: {year}\n"
-            except Exception as e:
-                print(f"[DEBUG] Error processing top papers: {str(e)}")
-                text_from_scholarly = "Error processing scholarly data"
-        else:
-            text_from_scholarly = "NO_SCHOLARLY_DATA_AVAILABLE"
-            print("[DEBUG] No author profile found - using default scholarly text")
-
-        print(f"\n[DEBUG] Final scholarly text length: {len(text_from_scholarly)}")
-        #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
-
-        system_msg2 = '''You are an expert cold email writer who specializes in crafting authentic, human-like academic outreach emails. Your PRIMARY goal is to write in a natural, conversational way that perfectly matches the sender's unique writing style and tone.
-
-        WRITING PHILOSOPHY:
-        - Write like a real person, not an AI - avoid robotic or overly formal language
-        - Every email template has its own personality - study and mirror it exactly
-        - The recipient should feel like they're hearing from a genuine human who took time to research them
-        - Natural flow is more important than perfect grammar - write how people actually email
-
-        CORE RESPONSIBILITIES:
-        1. MATCH THE EXACT WRITING STYLE: Study the template's vocabulary, sentence structure, energy level, and personality
-        2. Replace ALL text within square brackets [ ] with appropriate, specific information
-        3. Preserve ALL other text in the template exactly as written
-        4. Write replacements that sound like they came from the same person who wrote the template
-        5. PRESERVE THE ORIGINAL FORMATTING - maintain paragraph breaks, line spacing, and structure
-
-        STYLE MATCHING GUIDELINES:
-        - If the template is casual and uses contractions, your replacements should too
-        - If the template is energetic with exclamation points, maintain that energy
-        - If the template is reserved and formal, keep replacements similarly professional
-        - Match the sentence length patterns - short & punchy or long & flowing
-        - Use similar vocabulary complexity as the surrounding text
-        - Ensure replacements flow seamlessly with the template text'''
-
-
-
-        user_msg2 = '''TASK: Fill in this cold email template for Professor {professor_name}, a {professor_interest} professor.
-
-        STEP 1 - ANALYZE THE WRITING STYLE:
-        Before making any replacements, carefully study the template to understand:
-        - The overall tone (casual/formal, enthusiastic/reserved, etc.)
-        - Typical sentence length and structure
-        - Vocabulary choices and complexity
-        - Use of punctuation and formatting
-        - The writer's personality that comes through
-
-        TEMPLATE TO COMPLETE:
-        {email_template}
-
-        AVAILABLE INFORMATION:
-
-        === GOOGLE SCHOLAR DATA ===
-        {text_from_scholarly}
-
-        === WEB SEARCH DATA ===
-        {cleaned_content}
-
-        CRITICAL INSTRUCTIONS FOR NATURAL WRITING:
-        1. Your replacements should sound EXACTLY like the person who wrote the template
-        2. Prioritize natural flow over perfect accuracy - write how a real person would
-        3. Use conversational transitions and connectors that match the template style
-        4. If the template is informal, your replacements should be equally informal
-        5. Avoid AI-sounding phrases like "cutting-edge", "groundbreaking", "innovative" unless the template uses similar language
-        6. Include specific publication titles, but introduce them naturally as the template writer would
-        7. PRESERVE ALL PARAGRAPH BREAKS AND FORMATTING from the original template
-
-        WRITING STYLE EXAMPLES:
+        # Add a more explicit prompt for the retry
+        retry_msg = user_msg2 + f'''
         
-        If template says: "Hey! I was blown away by [publication]..."
-        Good replacement: "Hey! I was blown away by your paper on neural networks in robotics..."
-        Bad replacement: "Hey! I was blown away by your groundbreaking research publication titled 'Neural Networks in Robotics'..."
+        IMPORTANT: The previous attempt had these issues: {', '.join(issues)}
 
-        If template says: "I found [specific aspect] particularly interesting..."
-        Good replacement: "I found your approach to handling noisy sensor data particularly interesting..."
-        Bad replacement: "I found the innovative methodology you employed particularly interesting..."
+        Please ensure:
+        - ALL brackets [ ] are replaced with actual content that sounds natural and human
+        - NO placeholder text remains - write genuine, conversational replacements
+        - Include specific publication titles but introduce them naturally
+        - The email flows like it was written by one person, not assembled by AI
+        - PRESERVE ALL PARAGRAPH BREAKS from the original template
+        - Keep the exact same paragraph structure as the input template
+        - Most importantly: Make it sound like the same person who wrote the template!
 
-        REMEMBER:
-        - Write like you're the same person who wrote the template
-        - Keep the energy level consistent throughout
-        - Make it feel genuine and personal, not like a mail merge
-        - The professor should feel like they're getting a real, thoughtful email from someone who actually read their work
+        Remember: Natural, human-like writing is MORE important than formal correctness.
 
-        Generate the complete email now, with all brackets filled naturally and authentically:'''.format(
-                professor_name=professor_name, 
-                professor_interest=professor_interest,
-                email_template=email_template, 
-                text_from_scholarly=text_from_scholarly, 
-                cleaned_content=cleaned_content
-        )
-
-        print("[DEBUG] Starting final OpenAI API call for email generation")
-        completion = client.chat.completions.create(
+        Generate the corrected email:'''
+        
+        print("[DEBUG] Starting OpenAI API call for email generation retry")
+        retry_completion = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": system_msg2},
-                {"role": "user", "content": user_msg2}
+                {"role": "user", "content": retry_msg}
             ],
-            temperature=0.7,  # Lower from 1.0 for more consistent output
-            top_p=0.9,  # Add top_p for better quality
-            frequency_penalty=0.1,  # Slight penalty to avoid repetition
-            presence_penalty=0.1  # Slight penalty for more natural language
+            temperature=0.5,  # Even lower temperature for retry
+            top_p=0.9,
+            frequency_penalty=0.1,
+            presence_penalty=0.1
         )
         
-        # Validate the generated email
-        generated_email = completion.choices[0].message.content
-        print("[DEBUG] Finished final OpenAI API call")
-        cleaned_email, issues = validate_and_clean_email(generated_email, professor_name)
+        cleaned_email, issues = validate_and_clean_email(retry_completion.choices[0].message.content, professor_name)
+        print("[DEBUG] Finished OpenAI API call for email generation retry")
         
-        # If there are critical issues, try to regenerate with more explicit instructions
-        if issues and any('bracket' in issue or 'Placeholder' in issue for issue in issues):
-            print(f"Issues detected in generated email: {issues}")
-            print("Attempting to regenerate with stricter instructions...")
-            
-            # Add a more explicit prompt for the retry
-            retry_msg = user_msg2 + f'''
-            
-            IMPORTANT: The previous attempt had these issues: {', '.join(issues)}
+        if issues:
+            print(f"Warning: Email still has issues after retry: {issues}")
+    
+    email_messages.append({"Professor Name": professor_name, 
+                            "Email Content": cleaned_email})
+    print(cleaned_email)
+    print("[DEBUG] Starting send_email_to_firebase")
+    send_email_to_firebase(user_id, professor_name, professor_interest, cleaned_email, source)
+    print("[DEBUG] Finished send_email_to_firebase")
 
-            Please ensure:
-            - ALL brackets [ ] are replaced with actual content that sounds natural and human
-            - NO placeholder text remains - write genuine, conversational replacements
-            - Include specific publication titles but introduce them naturally
-            - The email flows like it was written by one person, not assembled by AI
-            - PRESERVE ALL PARAGRAPH BREAKS from the original template
-            - Keep the exact same paragraph structure as the input template
-            - Most importantly: Make it sound like the same person who wrote the template!
-
-            Remember: Natural, human-like writing is MORE important than formal correctness.
-
-            Generate the corrected email:'''
-            
-            print("[DEBUG] Starting OpenAI API call for email generation retry")
-            retry_completion = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": system_msg2},
-                    {"role": "user", "content": retry_msg}
-                ],
-                temperature=0.5,  # Even lower temperature for retry
-                top_p=0.9,
-                frequency_penalty=0.1,
-                presence_penalty=0.1
-            )
-            
-            cleaned_email, issues = validate_and_clean_email(retry_completion.choices[0].message.content, professor_name)
-            print("[DEBUG] Finished OpenAI API call for email generation retry")
-            
-            if issues:
-                print(f"Warning: Email still has issues after retry: {issues}")
-        
-        email_messages.append({"Professor Name": professor_name, 
-                                "Email Content": cleaned_email})
-        print(cleaned_email)
-        print("[DEBUG] Starting send_email_to_firebase")
-        send_email_to_firebase(user_id, professor_name, professor_interest, cleaned_email, source)
-        print("[DEBUG] Finished send_email_to_firebase")
-
-        return email_messages
-    except Exception as e:
-        print(f"[DEBUG] Error in final_together: {str(e)}")
-        return []
+    return email_messages
 
 @app.route('/generate-email', methods=['POST'])
 def generate_email_endpoint():
