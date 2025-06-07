@@ -11,6 +11,7 @@ success = pg.ScraperAPI("68e542eec9b7c2f5ce79daf70daed3ee")
 
 if success:
    scholarly.use_proxy(pg)
+   print("ScraperAPI proxy configured successfully")
 else:
    print("Warning: Failed to configure ScraperAPI proxy. Your requests may be blocked.")
 
