@@ -1,9 +1,8 @@
 from scholarly import scholarly, ProxyGenerator
 import difflib
 
-# The scholarly library can be blocked by Google Scholar if you make too many requests.
-# To avoid this, it's highly recommended to use a proxy.
-# You can uncomment the code below and add an API key from a service like ScraperAPI.
+'''
+
 pg = ProxyGenerator()
 # # Sign up for a free account at https://www.scraperapi.com/ to get an API key
 # # It is best practice to store API keys in environment variables, not in code.
@@ -14,6 +13,9 @@ if success:
    print("ScraperAPI proxy configured successfully")
 else:
    print("Warning: Failed to configure ScraperAPI proxy. Your requests may be blocked.")
+
+'''
+
 
 
 def search_for_author_exact_match(author_name, similarity_threshold=0.8):
