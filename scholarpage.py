@@ -1,5 +1,19 @@
-from scholarly import scholarly
+from scholarly import scholarly, ProxyGenerator
 import difflib
+
+# The scholarly library can be blocked by Google Scholar if you make too many requests.
+# To avoid this, it's highly recommended to use a proxy.
+# You can uncomment the code below and add an API key from a service like ScraperAPI.
+pg = ProxyGenerator()
+# # Sign up for a free account at https://www.scraperapi.com/ to get an API key
+# # It is best practice to store API keys in environment variables, not in code.
+success = pg.ScraperAPI("68e542eec9b7c2f5ce79daf70daed3ee")
+
+if success:
+   scholarly.use_proxy(pg)
+else:
+   print("Warning: Failed to configure ScraperAPI proxy. Your requests may be blocked.")
+
 
 def search_for_author_exact_match(author_name, similarity_threshold=0.8):
     print("Entered search_for_author_exact_match")
@@ -23,11 +37,10 @@ def search_for_author_exact_match(author_name, similarity_threshold=0.8):
     except StopIteration:
         pass  # No more results available
 
-    publication_titles = [pub['bib']['title'] for pub in keyword_search_results if 'bib' in pub and 'title' in pub['bib']]
-
-    # Now, if you want to print the names and titles
-    #print({'name': author_name, 'publications': publication_titles})
-    return({'name': author_name, 'publications': publication_titles})
+    # The keyword search returns full publication objects. We should return these
+    # directly so the data structure is consistent with an author profile.
+    # Previously, this was returning only a list of titles.
+    return {'name': author_name, 'publications': keyword_search_results}
 
 def get_top_cited_and_recent_papers(author_profile, top_recent=4, top_cited=1):
     if author_profile and 'publications' in author_profile:
