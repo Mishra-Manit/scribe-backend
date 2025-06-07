@@ -2,7 +2,9 @@ from scholarly import scholarly
 import difflib
 
 def search_for_author_exact_match(author_name, similarity_threshold=0.8):
+    print("Entered search_for_author_exact_match")
     search_query = scholarly.search_author(author_name)
+    print("Search query: ", search_query)
     for potential_author in search_query:
         found_name = potential_author['name']
         similarity = difflib.SequenceMatcher(None, author_name.lower(), found_name.lower()).ratio()
