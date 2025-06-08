@@ -23,12 +23,31 @@ jobs:
 
       - name: Deploy and Restart Application
         run: |
+          # Write the private key to a file on the runner
+          echo "${{ secrets.DEPLOY_KEY }}" > deploy_key
+          chmod 600 deploy_key
+          
+          # Use scp to copy the key to the droplet
+          scp -o StrictHostKeyChecking=no deploy_key ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }}:~/.ssh/deploy_key
+          
+          # Remove the key from the runner
+          rm deploy_key
+          
+          # SSH into the droplet and run the deployment commands
           ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} '
             set -ex
+            
+            # Ensure github.com is in known_hosts
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+            
+            # Pull the latest code
             cd /var/www/pythonserver
-            chmod 600 deploy_key
-            GIT_SSH_COMMAND="ssh -i deploy_key -o IdentitiesOnly=yes" git pull origin main
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes" git pull origin main
+            
+            # Clean up the deploy key from the droplet
+            rm ~/.ssh/deploy_key
+            
+            # Install dependencies and restart the service
             ./venv/bin/pip install -r requirements.txt
             sudo systemctl restart scriber
           '
