@@ -169,18 +169,21 @@ def scrape_professor_publications(professor_name, professor_interest):
     cleaned_content = cleanText(all_scraped_text)
     return cleaned_content
 
-def summarize_chunk(chunk, professor_interest):
+def summarize_chunk(chunk, professor_name, professor_interest):
     system_msg = '''You are an expert academic information extractor. Your task is to analyze web content and extract structured information about professors with high accuracy and detail.'''
     
     user_msg = f'''
-    Extract and organize ALL academic information about this {professor_interest} professor from the text below.
+    Extract and organize ALL academic information about Professor {professor_name}, a {professor_interest} professor, from the text below.
     
     OUTPUT FORMAT (use these exact headers):
     
     **PUBLICATIONS & RESEARCH:**
-    - List each publication with its complete title in quotes
-    - Include year and journal/conference if mentioned
-    - Note citation counts if available
+    - List each publication with its complete title in quotes.
+    - **VERIFICATION REQUIRED**: Only list publications if Professor {professor_name} is explicitly named as an author.
+    - Do NOT list publications by other individuals, even if they are on a similar topic.
+    - Do NOT list books, dissertations, or articles that are not peer-reviewed research papers unless specified.
+    - Include year and journal/conference if mentioned.
+    - Note citation counts if available.
     
     **RESEARCH INTERESTS:**
     - List specific research areas and topics
@@ -205,10 +208,11 @@ def summarize_chunk(chunk, professor_interest):
     - Research impact or applications
     
     IMPORTANT INSTRUCTIONS:
-    1. Include EXACT titles for all publications - this is critical
-    2. If information for a section isn't found, write "Not found in source"
-    3. Be comprehensive - don't summarize, extract everything relevant
-    4. Maintain academic accuracy - only include what's explicitly stated
+    1. Include EXACT titles for all publications - this is critical.
+    2. If information for a section isn't found, write "Not found in source".
+    3. Be comprehensive - don't summarize, extract everything relevant.
+    4. Maintain academic accuracy - only include what's explicitly stated.
+    5. **CRITICAL VALIDATION:** Before listing a publication, you MUST verify it belongs to Professor {professor_name}. Look for their name as an author. If you are not certain it is their research paper, do not include it. This is extremely important to avoid misrepresenting their work.
     
     SOURCE TEXT:
     {chunk}
@@ -229,14 +233,14 @@ def summarize_chunk(chunk, professor_interest):
     return completion.choices[0].message.content
 
 
-def summarize_text(scraped_content, professor_interest):
+def summarize_text(scraped_content, professor_name, professor_interest):
     CHUNK_SIZE = 900000
     summarized_text = ""
     chunks = [scraped_content[i:i+CHUNK_SIZE] for i in range(0, len(scraped_content), CHUNK_SIZE)]
 
     for chunk in chunks:
         try:
-            summarized_chunk = summarize_chunk(chunk, professor_interest)
+            summarized_chunk = summarize_chunk(chunk, professor_name, professor_interest)
             summarized_text += summarized_chunk + "\n"
         except Exception as e:
            print(f"Error summarizing text chunk: {e}")
@@ -304,7 +308,7 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
     print("[DEBUG] Starting scrape_professor_publications")
     scraped_content = scrape_professor_publications(professor_name, professor_interest)
     print("[DEBUG] Finished scrape_professor_publications, starting summarize_text")
-    cleaned_content = summarize_text(scraped_content, professor_interest)
+    cleaned_content = summarize_text(scraped_content, professor_name, professor_interest)
     # print("[DEBUG] Finished summarize_text, starting scholarpage.search_for_author_exact_match")
 
     # author_profile = scholarpage.search_for_author_exact_match(professor_name)
