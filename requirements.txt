@@ -15,3 +15,4 @@ firebase_admin==6.5.0
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+free-proxy

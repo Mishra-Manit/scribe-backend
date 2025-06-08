@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# import scholarpage
+import scholarpage
 
 from googleapiclient.discovery import build
 import requests
@@ -305,9 +305,24 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
     scraped_content = scrape_professor_publications(professor_name, professor_interest)
     print("[DEBUG] Finished scrape_professor_publications, starting summarize_text")
     cleaned_content = summarize_text(scraped_content, professor_interest)
-    
-    # Google Scholar integration is temporarily disabled.
-    text_from_scholarly = "NO_SCHOLARLY_DATA_AVAILABLE"
+    print("[DEBUG] Finished summarize_text, starting scholarpage.search_for_author_exact_match")
+
+    author_profile = scholarpage.search_for_author_exact_match(professor_name)
+    print(f"[DEBUG] scholarpage.search_for_author_exact_match returned: {author_profile}")
+
+    text_from_scholarly = " "
+
+    #print("Author profile: ", author_profile)
+
+    if author_profile:
+        print("[DEBUG] Author profile found, calling scholarpage.get_top_cited_and_recent_papers")
+        top_papers = scholarpage.get_top_cited_and_recent_papers(author_profile)
+        print("[DEBUG] Finished scholarpage.get_top_cited_and_recent_papers")
+        for title, citations, year in top_papers:
+            text_from_scholarly += f"Title: {title}, Citations: {citations}, Year: {year}\n"
+    else:
+        text_from_scholarly = "NO_SCHOLARLY_DATA_AVAILABLE"
+        print("[DEBUG] No author profile found, text_from_scholarly set to NO_SCHOLARLY_DATA_AVAILABLE")
 
     print("text from scholarly: ", text_from_scholarly)
     #This email HAS TO INCLUDE A PUBLICATION NAME IN THE EMAIL.
