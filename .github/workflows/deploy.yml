@@ -27,7 +27,8 @@ jobs:
             set -ex
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts
             cd /var/www/pythonserver
-            git pull origin main
+            chmod 600 deploy_key
+            GIT_SSH_COMMAND="ssh -i deploy_key -o IdentitiesOnly=yes" git pull origin main
             ./venv/bin/pip install -r requirements.txt
             sudo systemctl restart scriber
           '
