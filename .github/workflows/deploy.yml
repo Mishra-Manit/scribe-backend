@@ -25,6 +25,7 @@ jobs:
         run: |
           ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} '
             set -ex
+            ssh-keyscan -H github.com >> ~/.ssh/known_hosts
             cd /var/www/pythonserver
             git pull origin main
             ./venv/bin/pip install -r requirements.txt
