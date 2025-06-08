@@ -1,10 +1,6 @@
 from scholarly import scholarly, ProxyGenerator
 import difflib
 
-pg = ProxyGenerator()
-success = pg.FreeProxies()
-scholarly.use_proxy(pg)
-
 def search_for_author_exact_match(author_name, similarity_threshold=0.8):
     print("Entered search_for_author_exact_match")
     search_query = scholarly.search_author(author_name)
