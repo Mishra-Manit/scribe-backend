@@ -178,49 +178,36 @@ def scrape_professor_publications(professor_name, professor_interest):
     return cleaned_content
 
 def summarize_chunk(chunk, professor_name, professor_interest):
-    system_msg = '''You are an expert academic information extractor. Your task is to analyze web content and extract structured information about professors with high accuracy and detail.'''
+    system_msg = '''You are an expert academic information extractor. Your task is to analyze web content and create a succinct summary of a professor's key academic achievements. Your goal is to identify the most important information that can be used to personalize an outreach email.'''
     
     user_msg = f'''
-    Extract and organize ALL academic information about Professor {professor_name}, a {professor_interest} professor, from the text below.
+    Analyze the provided text and create a succinct summary of the academic profile of Professor {professor_name}, a {professor_interest} professor. The goal is to extract the most important, accurate highlights to be used in a personalized email.
     
-    OUTPUT FORMAT (use these exact headers):
+    OUTPUT FORMAT (use these exact headers and be concise):
     
-    **PUBLICATIONS & RESEARCH:**
-    - List each publication with its complete title in quotes.
+    **TOP 3 PUBLICATIONS & RESEARCH:**
+    - Identify and list the TOP 3 most interesting or impactful published research papers by Professor {professor_name}.
+    - For each paper, provide the complete title in quotes.
     - **VERIFICATION REQUIRED**: Only list publications if Professor {professor_name} is explicitly named as an author.
-    - Do NOT list publications by other individuals, even if they are on a similar topic.
-    - Do NOT list books, dissertations, or articles that are not peer-reviewed research papers unless specified.
-    - Include year and journal/conference if mentioned.
-    - Note citation counts if available.
+    - Do NOT list publications by other individuals.
+    - If you can't find 3, list as many as you can find.
     
-    **RESEARCH INTERESTS:**
-    - List specific research areas and topics
-    - Include current projects or focus areas
+    **RESEARCH INTERESTS SUMMARY:**
+    - Briefly summarize their main research areas and topics.
+    - Mention 1-2 key projects or focus areas if available.
     
-    **ACADEMIC BACKGROUND:**
-    - Education history (degrees, institutions)
-    - Academic positions held
-    - Department affiliations
+    **ACADEMIC HIGHLIGHTS:**
+    - List their terminal degree (e.g., Ph.D.) and institution.
+    - Mention their current primary academic position and department.
     
-    **AWARDS & RECOGNITION:**
-    - List any awards, honors, or distinctions
-    - Include year received if mentioned
-    
-    **TEACHING:**
-    - Courses taught
-    - Teaching philosophy or approach if mentioned
-    
-    **COLLABORATIONS & IMPACT:**
-    - Notable collaborations or joint work
-    - Industry partnerships
-    - Research impact or applications
+    **NOTABLE AWARDS & RECOGNITION:**
+    - List 1-2 of their most prestigious awards or honors.
     
     IMPORTANT INSTRUCTIONS:
-    1. Include EXACT titles for all publications - this is critical.
+    1. Be very succinct and focus on highlights. The output should be a brief, dense summary.
     2. If information for a section isn't found, write "Not found in source".
-    3. Be comprehensive - don't summarize, extract everything relevant.
-    4. Maintain academic accuracy - only include what's explicitly stated.
-    5. **CRITICAL VALIDATION:** Before listing a publication, you MUST verify it belongs to Professor {professor_name}. Look for their name as an author. If you are not certain it is their research paper, do not include it. This is extremely important to avoid misrepresenting their work.
+    3. **CRITICAL VALIDATION:** Before listing a publication, you MUST verify it belongs to Professor {professor_name}. Look for their name as an author. If you are not certain it is their research paper, do not include it. This is extremely important to avoid misrepresenting their work.
+    4. The primary goal is to identify a few key talking points for an email, not to create an exhaustive biography.
     
     SOURCE TEXT:
     {chunk}
