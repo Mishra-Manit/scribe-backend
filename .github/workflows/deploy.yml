@@ -37,6 +37,28 @@ jobs:
           ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} '
             set -ex
             
+            # Create/Update systemd service file for scriber
+            echo "[Unit]" | sudo tee /etc/systemd/system/scriber.service
+            echo "Description=Gunicorn instance to serve scriber" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "After=network.target" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "[Service]" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "User=${{ secrets.DROPLET_USER }}" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "Group=www-data" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "WorkingDirectory=/var/www/pythonserver" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "Environment=\"PATH=/var/www/pythonserver/venv/bin\"" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "ExecStart=/var/www/pythonserver/venv/bin/gunicorn app:app --workers 3 --bind 0.0.0.0:5000 --timeout 120" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "[Install]" | sudo tee -a /etc/systemd/system/scriber.service
+            echo "WantedBy=multi-user.target" | sudo tee -a /etc/systemd/system/scriber.service
+            
+            # Allow port 5000 through firewall
+            sudo ufw allow 5000
+            
+            # Reload systemd, enable and start the service
+            sudo systemctl daemon-reload
+            sudo systemctl enable scriber
+            
             # Ensure github.com is in known_hosts
             ssh-keyscan -H github.com >> ~/.ssh/known_hosts
             
