@@ -14,6 +14,14 @@ from firebase_func import send_email_to_firebase
 app = Flask(__name__)
 CORS(app)
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Health check endpoint for the load balancer.
+    Returns a 200 OK status if the app is running.
+    """
+    return jsonify({"status": "healthy"}), 200
+
 print("Testing file started")
 
 
