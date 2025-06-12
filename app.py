@@ -92,7 +92,7 @@ def scrape_professor_publications(professor_name, professor_interest):
     # Try multiple search strategies for better results
     search_queries = [
         f"{professor_name} {professor_interest} publications research papers",
-        f"{professor_name} site:edu publications",
+        f"{professor_name} {professor_interest} about information",
         f"{professor_name} {professor_interest} general information"
     ]
     
