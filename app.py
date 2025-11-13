@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import os
 
 # import scholarpage
 
@@ -9,7 +10,8 @@ from bs4 import BeautifulSoup
 import re
 from openai import OpenAI
 
-from firebase_func import send_email_to_firebase
+# Firebase functionality has been removed - data is now stored in Supabase via the new FastAPI backend
+# from firebase_func import send_email_to_firebase
 
 app = Flask(__name__)
 CORS(app)
@@ -25,8 +27,8 @@ def health_check():
 print("Testing file started")
 
 
-# Initialize OpenAI client
-client = OpenAI(api_key='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')
+# Initialize OpenAI client - API key loaded from environment variable
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialize Google Custom Search API
 def google_search(search_term, api_key, cse_id, **kwargs):
@@ -86,8 +88,9 @@ def cleanText(text):
     return cleaned_text
 
 def scrape_professor_publications(professor_name, professor_interest):
-    api_key = "AIzaSyD1J5WBjeWOeNTdAT5y5Cw8gztUriPRiuc"
-    cse_id = "96fd38a2a138e4738"
+    # Load Google API credentials from environment variables
+    api_key = os.getenv("GOOGLE_API_KEY")
+    cse_id = os.getenv("GOOGLE_CSE_ID")
     
     # Try multiple search strategies for better results
     search_queries = [
@@ -465,12 +468,16 @@ def final_together(email_template, professor_name, professor_interest, user_id, 
         if issues:
             print(f"Warning: Email still has issues after retry: {issues}")
     
-    email_messages.append({"Professor Name": professor_name, 
+    email_messages.append({"Professor Name": professor_name,
                             "Email Content": cleaned_email})
     print(cleaned_email)
-    print("[DEBUG] Starting send_email_to_firebase")
-    send_email_to_firebase(user_id, professor_name, professor_interest, cleaned_email, source)
-    print("[DEBUG] Finished send_email_to_firebase")
+
+    # TODO: Migrate to FastAPI backend - Store email in Supabase database using SQLAlchemy
+    # The new FastAPI backend should handle this via the Email model
+    # print("[DEBUG] Starting send_email_to_firebase")
+    # send_email_to_firebase(user_id, professor_name, professor_interest, cleaned_email, source)
+    # print("[DEBUG] Finished send_email_to_firebase")
+    print("[INFO] Email generated successfully (storage pending migration to FastAPI backend)")
 
     return email_messages
 

@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
 from database import check_db_connection, get_db_info
+from services.supabase import get_supabase_client_safe
+from api.routes import user_router
 
 
 @asynccontextmanager
@@ -36,6 +38,15 @@ async def lifespan(app: FastAPI):
     else:
         print("✗ Database connection failed!")
         print("  Please check your DATABASE_URL in .env file")
+
+    # Check Supabase client initialization
+    print("\nChecking Supabase connection...")
+    supabase = get_supabase_client_safe()
+    if supabase:
+        print("✓ Supabase client initialized successfully")
+    else:
+        print("✗ Supabase client initialization failed!")
+        print("  Please check your SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file")
 
     print("=" * 50)
 
@@ -105,12 +116,14 @@ async def root() -> Dict[str, str]:
 
 
 # ============================================================================
-# API Endpoints (To be implemented)
+# API Routers
 # ============================================================================
 
-# TODO: Add authentication middleware
-# TODO: Add user endpoints
+# User management endpoints (authentication required)
+app.include_router(user_router)
+
 # TODO: Add email generation endpoints
+# TODO: Add email history endpoints
 # TODO: Migrate email generation logic from app.py
 
 
