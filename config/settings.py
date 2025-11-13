@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # Supabase Configuration
     supabase_url: str = Field(..., description="Supabase project URL")
-    supabase_service_role_key: str = Field(..., description="Supabase service role key for backend operations (sb_secret_...)")
+    supabase_service_role_key: str = Field(..., description="Supabase service role key for backend operations")
 
     # External APIs
     anthropic_api_key: str = Field(..., description="Anthropic API key")
