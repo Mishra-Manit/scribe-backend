@@ -1,0 +1,1 @@
+# This is the plan to go from a basic python saas to a pydantic supported agentic workflow
