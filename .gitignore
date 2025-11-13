@@ -6,11 +6,16 @@ venv/
 # Ignore Python cache
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
 
 # Ignore sensitive credential files
-coldauth-a5caf-firebase-adminsdk-fbsvc-274ef406d7.json
 token.json
-book_info.json
+credentials.json
 *.json
 
 # Ignore private keys
@@ -18,4 +23,27 @@ digitaloceankey
 *.pem
 
 # Ignore environment variables file
-.env 
+.env
+.env.local
+# But DO NOT ignore the example file
+!.env.example
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore database files (SQLite for local dev)
+*.db
+*.sqlite
+*.sqlite3
+
+# Ignore OS files
+.DS_Store
+Thumbs.db 

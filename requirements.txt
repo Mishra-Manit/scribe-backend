@@ -1,18 +1,40 @@
-Flask
-Flask-CORS
-gunicorn
+# Web Framework & Server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Database & ORM
+sqlalchemy>=2.0.25
+alembic>=1.13.1
+psycopg2-binary>=2.9.9
+supabase>=2.3.0
+
+# Configuration & Validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+
+# Authentication & Security
+pyjwt>=2.8.0
+python-jose[cryptography]>=3.3.0
+
+# Google APIs
 google-api-core==2.18.0
 google-api-python-client==2.127.0
 google-auth==2.29.0
 google-auth-httplib2==0.2.0
+google-auth-oauthlib>=1.2.0
 googleapis-common-protos==1.63.0
-requests==2.31.0
-beautifulsoup4==4.12.3
-openai>=1.0.0
-scholarly[proxy]>=1.7.11
+
+# Anthropic
+anthropic>=0.72.1
+
+# Web Scraping & HTTP
+requests>=2.31.0
 httpx>=0.23.0
-firebase_admin==6.5.0
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
+beautifulsoup4>=4.12.3
+scholarly[proxy]>=1.7.11
 free-proxy
+
+# Utilities
+python-dateutil>=2.8.2
