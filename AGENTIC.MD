@@ -6,6 +6,7 @@
 
 ## Table of Contents
 
+0. [Development Setup with Makefile](#0-development-setup-with-makefile)
 1. [Architecture Philosophy & Design](#1-architecture-philosophy--design)
 2. [Core Data Models](#2-core-data-models)
 3. [Pipeline Core Infrastructure](#3-pipeline-core-infrastructure)
@@ -15,6 +16,41 @@
 7. [Logfire Observability](#7-logfire-observability)
 8. [Testing Strategy](#8-testing-strategy)
 9. [Migration from Legacy Flask](#9-migration-from-legacy-flask)
+
+---
+
+## 0. Development Setup with Makefile
+
+### 0.3 Running the Development Server
+
+**Quick Start (Recommended):**
+
+```bash
+# Terminal 1: Start Redis + FastAPI + Celery
+make redis-start
+make serve
+```
+
+That's it! Your development environment is now running:
+- **FastAPI**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
+- **Celery Worker**: Processing tasks in background
+
+**Advanced Setup (Separate Processes):**
+
+```bash
+# Terminal 1: Redis
+make redis-start
+
+# Terminal 2: FastAPI server
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 3: Celery worker
+make celery-worker
+
+# Terminal 4: Flower monitoring UI
+make flower  # http://localhost:5555
+```
 
 ---
 

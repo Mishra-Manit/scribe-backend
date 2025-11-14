@@ -1,22 +1,24 @@
 # EmailPipelineData dataclass. Needs to have classes for JobStatus(ENUM), TemplateType(ENUM), EmailPipelineData, and many more. Draft this out later.
 
 
-from attr import dataclass
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, Optional
 
-
+# JobStatus is an internal enum that is used to track the status of the pipeline job
 class JobStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
 
-
-class TemplateType(Enum):
+# Only the template type is needed for the pipeline so it is has a str representation and a native enum representation
+class TemplateType(str, Enum):
     RESEARCH = "research"
     BOOK = "book"
     GENERAL = "general"
 
-
+@dataclass
 class PipelineJob:
     job_id: str
     status: JobStatus

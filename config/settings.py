@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
+    # Observability
+    logfire_token: str = Field(default="", description="Logfire observability token")
+
     @field_validator("allowed_origins")
     @classmethod
     def parse_origins(cls, v: str) -> List[str]:

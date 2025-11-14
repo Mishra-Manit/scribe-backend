@@ -12,7 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
+from observability.logfire_config import LogfireConfig
 from api.routes import user_router
+import logfire
 
 
 @asynccontextmanager
@@ -47,6 +49,15 @@ async def lifespan(app: FastAPI):
     else:
         print("✗ Supabase client initialization failed!")
         print("  Please check your SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file")
+
+    # Initialize Logfire observability
+    print("\nInitializing Logfire observability...")
+    LogfireConfig.initialize(token=settings.logfire_token)
+
+    # Log local instance creation for development environments
+    if settings.is_development:
+        import logfire
+        logfire.info("Local development instance created", environment=settings.environment)
 
     print("=" * 50)
 

@@ -14,12 +14,13 @@ UPDATE THIS DOCUMENT WITH THE FOLLOWING:
 
 1. [Executive Summary](#executive-summary)
 2. [Architecture Overview](#architecture-overview)
-3. [Frontend Improvements](#frontend-improvements)
-4. [Backend Improvements](#backend-improvements)
-5. [Security & Environment](#security-environment)
-6. [Type System](#type-system)
-7. [Project Structure](#project-structure)
-8. [Prioritized Action Plan](#action-plan)
+3. [Development Workflow with Makefile](#development-workflow-with-makefile)
+4. [Frontend Improvements](#frontend-improvements)
+5. [Backend Improvements](#backend-improvements)
+6. [Security & Environment](#security-environment)
+7. [Type System](#type-system)
+8. [Project Structure](#project-structure)
+9. [Prioritized Action Plan](#action-plan)
 
 ---
 
@@ -183,6 +184,38 @@ UPDATE THIS DOCUMENT WITH THE FOLLOWING:
 - Business logic and validation
 - API endpoints
 - Email generation service
+
+---
+
+## Development Workflow with Makefile
+
+### Overview
+
+The project now includes a comprehensive **Makefile** that streamlines all common development tasks. This replaces manual command execution and provides a consistent interface for running services, managing databases, and performing maintenance.
+
+### Quick Start
+
+```bash
+# 1. Start Redis (required for Celery)
+make redis-start
+
+# 2. Start FastAPI server + Celery worker together
+make serve
+```
+
+That's it! Your development environment is now running.
+
+### Available Commands
+
+#### **Server & Worker Management**
+
+```bash
+make serve              # Start FastAPI + Celery worker (most common command)
+make run                # Alias for serve
+make celery-worker      # Start Celery worker only
+make flower             # Start Flower monitoring UI at http://localhost:5555
+make stop-all           # Stop all processes (uvicorn, celery, flower)
+```
 
 ---
 

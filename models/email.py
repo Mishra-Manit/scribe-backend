@@ -6,13 +6,13 @@ Represents the emails table in the database.
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum, text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from database.base import Base
-
+from pipeline.models.core import TemplateType
 
 class Email(Base):
     """
@@ -78,6 +78,21 @@ class Email(Base):
         comment="When the email was generated"
     )
 
+    template_type = Column(
+        Enum(TemplateType, name="template_type_enum", native_enum=True),
+        nullable=False,
+        index=True,
+        comment="Pipeline template classification"
+    )
+
+    email_metadata = Column(
+        "metadata",
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        comment="Structured generation metadata (papers, sources, timings)"
+    )
+
     # Relationships
     user = relationship(
         "User",
@@ -111,5 +126,7 @@ class Email(Base):
             "recipient_name": self.recipient_name,
             "recipient_interest": self.recipient_interest,
             "email_message": self.email_message,
+            "template_type": self.template_type.value if self.template_type else None,
+            "metadata": self.email_metadata or {},
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
