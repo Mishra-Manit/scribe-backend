@@ -1,12 +1,9 @@
 """
-
 Web Scraper Step
 
-
-This step takes in the 
-
+Fetches and scrapes web content using Google Custom Search + BeautifulSoup.
 """
 
-__all__ = [
-    "WebScraper",
-]
+from .main import WebScraperStep
+
+__all__ = ["WebScraperStep"]

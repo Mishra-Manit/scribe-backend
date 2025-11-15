@@ -50,6 +50,10 @@ class LogfireConfig:
             send_to_logfire=True,
         )
 
+        # Enable automatic instrumentation for pydantic-ai agents
+        # This logs all LLM calls with inputs, outputs, tokens, cost, and latency
+        logfire.instrument_pydantic_ai()
+
         cls._initialized = True
 
     @classmethod

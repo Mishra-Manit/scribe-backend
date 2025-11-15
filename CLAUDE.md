@@ -47,7 +47,50 @@ alembic current
 alembic history --verbose
 ```
 
-### Testing & Health Checks
+### Testing
+
+**IMPORTANT**: Always use the virtual environment's Python to run tests.
+
+```bash
+# Activate virtual environment first
+source venv/bin/activate
+
+# Run all tests
+pytest
+
+# Run tests in a specific directory
+pytest pipeline/steps/template_parser/
+
+# Run a specific test file
+pytest pipeline/steps/template_parser/test_template_parser.py
+
+# Run a specific test function
+pytest pipeline/steps/template_parser/test_template_parser.py::test_logging_research_template
+
+# Run tests with markers
+pytest -m unit              # Run only unit tests
+pytest -m "not slow"        # Skip slow tests
+pytest -m integration       # Run only integration tests
+
+# Run with verbose output
+pytest -v
+
+# Run with output capture disabled (see print statements)
+pytest -s
+
+# Run and show coverage report
+pytest --cov=pipeline --cov-report=html
+
+# Collect tests without running (useful for debugging)
+pytest --collect-only
+```
+
+**Test Configuration:**
+- `pytest.ini` - Pytest configuration (markers, paths, async settings)
+- `conftest.py` - Global test fixtures and setup (logfire, paths)
+- Individual `conftest.py` in test directories for module-specific fixtures
+
+### Health Checks
 
 ```bash
 # Health check endpoint
@@ -202,6 +245,111 @@ When working with the pipeline system:
 4. Use structured logging via step logger
 5. Handle errors gracefully and return detailed failure information
 
+### Writing Tests
+
+**Test File Organization:**
+```
+pipeline/steps/template_parser/
+├── __init__.py
+├── main.py
+├── test_template_parser.py        # Main test suite
+└── test_template_parser_logging.py # Specific logging tests
+```
+
+**Test Structure Best Practices:**
+
+1. **Use proper imports** - Always use absolute imports from project root:
+   ```python
+   # ✓ CORRECT
+   from pipeline.steps.template_parser.main import TemplateParserStep
+   from pipeline.models.core import PipelineData
+
+   # ✗ WRONG
+   from .main import TemplateParserStep  # Relative imports fail in tests
+   ```
+
+2. **Mark async tests** - Use `@pytest.mark.asyncio` for async functions:
+   ```python
+   @pytest.mark.asyncio
+   async def test_async_function():
+       result = await some_async_function()
+       assert result.success
+   ```
+
+3. **Use markers** to categorize tests:
+   ```python
+   @pytest.mark.unit
+   @pytest.mark.asyncio
+   async def test_fast_unit_test():
+       pass
+
+   @pytest.mark.integration
+   @pytest.mark.slow
+   async def test_external_api():
+       pass
+   ```
+
+4. **Leverage fixtures** from conftest.py:
+   ```python
+   def test_with_fixtures(project_root, mock_env_vars):
+       mock_env_vars({"API_KEY": "test-key"})
+       # Test code here
+   ```
+
+5. **Use logfire spans** for observability:
+   ```python
+   import logfire
+
+   async def test_with_logging():
+       with logfire.span("test_operation"):
+           result = await operation()
+           logfire.info("Operation completed", result=result)
+   ```
+
+**Common Testing Pitfalls:**
+
+❌ **Running tests with system Python**
+```bash
+# This will fail if pytest not installed globally
+python -m pytest test_file.py
+pytest test_file.py
+```
+
+✅ **Always use virtual environment**
+```bash
+source venv/bin/activate
+pytest test_file.py
+
+# OR use venv directly without activating
+venv/bin/pytest test_file.py
+```
+
+❌ **Import errors due to missing __init__.py**
+- Ensure every package directory has `__init__.py`
+- Check `pipeline/`, `pipeline/steps/`, and all subdirectories
+
+✅ **Proper package structure**
+```
+pipeline/
+├── __init__.py          # Required
+├── steps/
+│   ├── __init__.py      # Required
+│   └── template_parser/
+│       └── __init__.py  # Required
+```
+
+❌ **Running tests from wrong directory**
+```bash
+cd pipeline/steps/template_parser
+pytest test_template_parser.py  # May cause import errors
+```
+
+✅ **Always run from project root**
+```bash
+# From /Users/manitmishra/Desktop/pythonserver
+pytest pipeline/steps/template_parser/test_template_parser.py
+```
+
 ## Project Structure
 
 ```
@@ -287,3 +435,49 @@ When working with the pipeline system:
 3. Ensure user is initialized with POST `/api/user/init`
 4. Check server logs for detailed error messages
 5. Verify environment variables are loaded correctly
+
+### Writing and Running Tests
+
+1. **Create test file** in the same directory as the code being tested:
+   ```bash
+   # For pipeline/steps/my_step/main.py, create:
+   # pipeline/steps/my_step/test_my_step.py
+   ```
+
+2. **Ensure package structure** has all required `__init__.py` files:
+   ```bash
+   # Check that __init__.py exists in:
+   # - pipeline/
+   # - pipeline/steps/
+   # - pipeline/steps/my_step/
+   ```
+
+3. **Write test with proper structure**:
+   ```python
+   import pytest
+   import logfire
+   from pipeline.steps.my_step.main import MyStep
+   from pipeline.models.core import PipelineData
+
+   @pytest.mark.unit
+   @pytest.mark.asyncio
+   async def test_my_step():
+       step = MyStep()
+       data = PipelineData(...)
+
+       with logfire.span("test_my_step"):
+           result = await step.execute(data)
+           assert result.success
+   ```
+
+4. **Run test from project root** using virtual environment:
+   ```bash
+   source venv/bin/activate
+   pytest pipeline/steps/my_step/test_my_step.py -v
+   ```
+
+5. **Debug import errors**:
+   - Verify you're using `venv/bin/pytest`, not system pytest
+   - Check all `__init__.py` files exist in package hierarchy
+   - Ensure running from project root (`/pythonserver`)
+   - Use `pytest --collect-only` to test import without execution

@@ -1,12 +1,9 @@
 """
-
 Email Composer Step
 
-
-This step takes in the 
-
+Final step in the pipeline - generates email and writes to database.
 """
 
-__all__ = [
-    "EmailComposer",
-]
+from .main import EmailComposerStep
+
+__all__ = ["EmailComposerStep"]

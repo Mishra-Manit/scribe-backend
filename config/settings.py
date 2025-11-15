@@ -106,3 +106,12 @@ class Settings(BaseSettings):
 
 # Create a singleton instance
 settings = Settings()
+
+
+def get_settings() -> "Settings":
+    """Return the singleton settings instance.
+
+    Provided for backward-compatibility with modules that import
+    `config.settings.get_settings` instead of the `settings` variable.
+    """
+    return settings

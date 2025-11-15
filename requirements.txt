@@ -28,8 +28,9 @@ google-auth-httplib2==0.2.0
 google-auth-oauthlib>=1.2.0
 googleapis-common-protos==1.63.0
 
-# Anthropic
+# Anthropic & AI Agents
 anthropic>=0.72.1
+pydantic-ai>=1.18.0
 
 # Web Scraping & HTTP
 requests>=2.31.0
@@ -37,6 +38,7 @@ httpx[http2]>=0.27.0
 beautifulsoup4>=4.12.3
 scholarly[proxy]>=1.7.11
 free-proxy
+arxiv>=2.0.0
 
 # Task Queue & Distributed Computing
 celery>=5.3.0
@@ -46,6 +48,10 @@ kombu>=5.3.0
 
 # Observability & Monitoring
 logfire>=0.28.0
+
+# Testing
+pytest==9.0.1
+pytest-asyncio>=0.23
 
 # Utilities
 python-dateutil>=2.8.2

@@ -1,12 +1,9 @@
 """
+ArXiv Helper Step
 
-Arxiv Helper Step
-
-
-This step takes in the 
-
+Conditionally fetches academic papers from ArXiv API (only for RESEARCH templates).
 """
 
-__all__ = [
-    "ArxivHelper",
-]
+from .main import ArxivHelperStep
+
+__all__ = ["ArxivHelperStep"]
