@@ -6,10 +6,15 @@ Email validation and quality checking functions.
 
 import re
 import logfire
-from typing import List, Tuple
+from typing import List
 
 from .models import EmailValidationResult
 from pipeline.models.core import TemplateType
+
+
+# Email validation constants
+MIN_WORD_COUNT = 50
+MAX_WORD_COUNT = 500
 
 
 def validate_email(
@@ -77,9 +82,9 @@ def validate_email(
     # Check 4: Word count
     word_count = len(email_content.split())
 
-    if word_count < 50:
-        issues.append(f"Email too short: {word_count} words (minimum 50)")
-    elif word_count > 500:
+    if word_count < MIN_WORD_COUNT:
+        issues.append(f"Email too short: {word_count} words (minimum {MIN_WORD_COUNT})")
+    elif word_count > MAX_WORD_COUNT:
         warnings.append(f"Email very long: {word_count} words (consider shortening)")
 
     # Check 5: Publications mentioned if required
@@ -221,42 +226,3 @@ def _check_tone_consistency(email_content: str) -> bool:
 
     # Basic checks passed
     return True
-
-
-def extract_subject_line(email_content: str) -> Tuple[str, str]:
-    """
-    Extract subject line if present in email.
-
-    Looks for patterns like:
-    - "Subject: X"
-    - First line if short (<80 chars)
-
-    Args:
-        email_content: Email text
-
-    Returns:
-        Tuple of (subject_line, email_body)
-        If no subject found, returns ("", email_content)
-    """
-    lines = email_content.split('\n')
-
-    if not lines:
-        return ("", email_content)
-
-    # Check for explicit "Subject:" line
-    first_line = lines[0].strip()
-
-    if first_line.lower().startswith('subject:'):
-        subject = first_line[8:].strip()  # Remove "Subject: "
-        body = '\n'.join(lines[1:]).strip()
-        return (subject, body)
-
-    # Check if first line is short (potential subject)
-    if len(first_line) < 80 and len(lines) > 1 and lines[1].strip() == "":
-        # First line is short and followed by blank line - likely subject
-        subject = first_line
-        body = '\n'.join(lines[2:]).strip()
-        return (subject, body)
-
-    # No subject line detected
-    return ("", email_content)

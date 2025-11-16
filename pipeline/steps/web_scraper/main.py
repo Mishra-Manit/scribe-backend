@@ -63,10 +63,10 @@ class WebScraperStep(BasePipelineStep):
         self.results_per_query = 3
         self.max_pages_to_scrape = 5
         self.scrape_timeout = 10.0
-        self.max_concurrent_scrapes = 2  # Depends on celerk workers RAM
+        self.max_concurrent_scrapes = 2  # Depends on celery workers RAM
 
         # Batch summarization configuration
-        self.batch_chunk_size = 10000  # Characters per batch
+        self.chunk_size = 30000  # Characters per chunk (for content splitting)
         self.batch_max_output_chars = 4000  # Max chars per batch summary
         self.final_max_output_chars = 3000  # Max chars for final summary
 
@@ -101,152 +101,141 @@ class WebScraperStep(BasePipelineStep):
         4. Summarize content using Anthropic (if too long)
         5. Update PipelineData
         """
-        try:
-            # Step 1: Google Custom Search
-            logfire.info(
-                "Performing Google searches",
-                search_terms=pipeline_data.search_terms,
-                results_per_query=self.results_per_query
-            )
+        # Step 1: Google Custom Search
+        logfire.info(
+            "Performing Google searches",
+            search_terms=pipeline_data.search_terms,
+            results_per_query=self.results_per_query
+        )
 
-            search_results = await self.google_client.search_multiple_terms(
-                queries=pipeline_data.search_terms,
-                results_per_query=self.results_per_query
-            )
+        search_results = await self.google_client.search_multiple_terms(
+            queries=pipeline_data.search_terms,
+            results_per_query=self.results_per_query
+        )
 
-            if not search_results:
-                logfire.warning("No search results found")
-                pipeline_data.scraped_content = "No search results found."
-                pipeline_data.scraped_page_contents = {}
-                pipeline_data.scraped_urls = []
-                pipeline_data.scraping_metadata = {
-                    "total_attempts": 0,
-                    "successful_scrapes": 0,
-                    "failed_urls": []
-                }
-
-                return StepResult(
-                    success=True,
-                    step_name=self.step_name,
-                    warnings=["No search results found for any query"],
-                    metadata={"search_results_count": 0}
-                )
-
-            # Extract URLs from search results
-            urls_to_scrape = [
-                result.get('link', '')
-                for result in search_results
-                if result.get('link')
-            ][:self.max_pages_to_scrape]
-
-            logfire.info(
-                "URLs to scrape",
-                total_urls=len(urls_to_scrape)
-            )
-
-            # Step 2: Scrape URLs concurrently
-            scraped_pages = await self._scrape_urls_concurrent(urls_to_scrape)
-
-            # Step 3: Build scraping result
-            scraping_result = ScrapingResult(
-                pages_scraped=scraped_pages,
-                failed_urls=[
-                    url for url in urls_to_scrape
-                    if url not in [page.url for page in scraped_pages]
-                ],
-                total_attempts=len(urls_to_scrape),
-                total_content_length=sum(len(page.content) for page in scraped_pages)
-            )
-
-            logfire.info(
-                "Scraping completed",
-                successful=len(scraped_pages),
-                failed=len(scraping_result.failed_urls),
-                success_rate=scraping_result.success_rate,
-                total_content_length=scraping_result.total_content_length
-            )
-
-            if not scraped_pages:
-                pipeline_data.scraped_content = "Failed to scrape any content."
-                pipeline_data.scraped_page_contents = {}
-                pipeline_data.scraped_urls = []
-                pipeline_data.scraping_metadata = scraping_result.model_dump()
-
-                return StepResult(
-                    success=True,
-                    step_name=self.step_name,
-                    warnings=["Failed to scrape any URLs"],
-                    metadata={"scraped_pages": 0}
-                )
-
-            # Step 4: Combine and summarize content
-            combined_content = self._combine_scraped_content(scraped_pages)
-
-            # ALWAYS summarize with LLM for:
-            # 1. Anti-hallucination fact checking
-            # 2. Content filtering (removes boilerplate, duplicates)
-            # 3. Context optimization for email generation
-            # 4. Structured output format
-            logfire.info(
-                "Summarizing content with LLM for fact verification",
-                original_length=len(combined_content),
-                num_pages=len(scraped_pages)
-            )
-
-            final_content = await self._summarize_content(
-                content=combined_content,
-                recipient_name=pipeline_data.recipient_name,
-                recipient_interest=pipeline_data.recipient_interest,
-                template_type=pipeline_data.template_type
-            )
-
-            # Check for uncertainty markers in the summary
-            has_uncertainty = "[UNCERTAIN]" in final_content or "[SINGLE SOURCE]" in final_content
-            if has_uncertainty:
-                logfire.warning(
-                    "Summary contains uncertainty markers",
-                    has_uncertain=("[UNCERTAIN]" in final_content),
-                    has_single_source=("[SINGLE SOURCE]" in final_content)
-                )
-
-            # Step 5: Update PipelineData
-            pipeline_data.scraped_content = final_content
-            pipeline_data.scraped_urls = [page.url for page in scraped_pages]
-            pipeline_data.scraped_page_contents = {page.url: page.content for page in scraped_pages}
+        if not search_results:
+            logfire.warning("No search results found")
+            pipeline_data.scraped_content = "No search results found."
+            pipeline_data.scraped_page_contents = {}
+            pipeline_data.scraped_urls = []
             pipeline_data.scraping_metadata = {
-                "total_attempts": scraping_result.total_attempts,
-                "successful_scrapes": len(scraped_pages),
-                "failed_urls": scraping_result.failed_urls,
-                "success_rate": scraping_result.success_rate,
-                "total_content_length": scraping_result.total_content_length,
-                "final_content_length": len(final_content),
-                "was_summarized": True,
-                "has_uncertainty_markers": has_uncertainty
+                "total_attempts": 0,
+                "successful_scrapes": 0,
+                "failed_urls": []
             }
 
-            # Return success
             return StepResult(
                 success=True,
                 step_name=self.step_name,
-                metadata={
-                    "pages_scraped": len(scraped_pages),
-                    "urls_scraped": pipeline_data.scraped_urls,
-                    "content_length": len(final_content)
-                },
-                warnings=[
-                    f"{len(scraping_result.failed_urls)} URLs failed to scrape"
-                ] if scraping_result.failed_urls else []
+                warnings=["No search results found for any query"],
+                metadata={"search_results_count": 0}
             )
 
-        except ExternalAPIError:
-            raise
-        except Exception as e:
-            logfire.error(
-                "Unexpected error in web scraper",
-                error=str(e),
-                error_type=type(e).__name__
+        # Extract URLs from search results
+        urls_to_scrape = [
+            result.get('link', '')
+            for result in search_results
+            if result.get('link')
+        ][:self.max_pages_to_scrape]
+
+        logfire.info(
+            "URLs to scrape",
+            total_urls=len(urls_to_scrape)
+        )
+
+        # Step 2: Scrape URLs concurrently
+        scraped_pages = await self._scrape_urls_concurrent(urls_to_scrape)
+
+        # Step 3: Build scraping result
+        scraping_result = ScrapingResult(
+            pages_scraped=scraped_pages,
+            failed_urls=[
+                url for url in urls_to_scrape
+                if url not in [page.url for page in scraped_pages]
+            ],
+            total_attempts=len(urls_to_scrape),
+            total_content_length=sum(len(page.content) for page in scraped_pages)
+        )
+
+        logfire.info(
+            "Scraping completed",
+            successful=len(scraped_pages),
+            failed=len(scraping_result.failed_urls),
+            success_rate=scraping_result.success_rate,
+            total_content_length=scraping_result.total_content_length
+        )
+
+        if not scraped_pages:
+            pipeline_data.scraped_content = "Failed to scrape any content."
+            pipeline_data.scraped_page_contents = {}
+            pipeline_data.scraped_urls = []
+            pipeline_data.scraping_metadata = scraping_result.model_dump()
+
+            return StepResult(
+                success=True,
+                step_name=self.step_name,
+                warnings=["Failed to scrape any URLs"],
+                metadata={"scraped_pages": 0}
             )
-            raise
+
+        # Step 4: Combine and summarize content
+        combined_content = self._combine_scraped_content(scraped_pages)
+
+        # ALWAYS summarize with LLM for:
+        # 1. Anti-hallucination fact checking
+        # 2. Content filtering (removes boilerplate, duplicates)
+        # 3. Context optimization for email generation
+        # 4. Structured output format
+        logfire.info(
+            "Summarizing content with LLM for fact verification",
+            original_length=len(combined_content),
+            num_pages=len(scraped_pages)
+        )
+
+        final_content = await self._summarize_content(
+            content=combined_content,
+            recipient_name=pipeline_data.recipient_name,
+            recipient_interest=pipeline_data.recipient_interest,
+            template_type=pipeline_data.template_type
+        )
+
+        # Check for uncertainty markers in the summary
+        has_uncertainty = "[UNCERTAIN]" in final_content or "[SINGLE SOURCE]" in final_content
+        if has_uncertainty:
+            logfire.warning(
+                "Summary contains uncertainty markers",
+                has_uncertain=("[UNCERTAIN]" in final_content),
+                has_single_source=("[SINGLE SOURCE]" in final_content)
+            )
+
+        # Step 5: Update PipelineData
+        pipeline_data.scraped_content = final_content
+        pipeline_data.scraped_urls = [page.url for page in scraped_pages]
+        pipeline_data.scraped_page_contents = {page.url: page.content for page in scraped_pages}
+        pipeline_data.scraping_metadata = {
+            "total_attempts": scraping_result.total_attempts,
+            "successful_scrapes": len(scraped_pages),
+            "failed_urls": scraping_result.failed_urls,
+            "success_rate": scraping_result.success_rate,
+            "total_content_length": scraping_result.total_content_length,
+            "final_content_length": len(final_content),
+            "was_summarized": True,
+            "has_uncertainty_markers": has_uncertainty
+        }
+
+        # Return success
+        return StepResult(
+            success=True,
+            step_name=self.step_name,
+            metadata={
+                "pages_scraped": len(scraped_pages),
+                "urls_scraped": pipeline_data.scraped_urls,
+                "content_length": len(final_content)
+            },
+            warnings=[
+                f"{len(scraping_result.failed_urls)} URLs failed to scrape"
+            ] if scraping_result.failed_urls else []
+        )
 
     async def _scrape_urls_concurrent(
         self,
@@ -328,29 +317,29 @@ class WebScraperStep(BasePipelineStep):
         Returns:
             Combined content string with page markers
         """
-        combined = ""
+        parts = []
 
         for idx, page in enumerate(pages, start=1):
             # Start marker
-            combined += f"{'=' * 80}\n"
-            combined += f"=== PAGE {idx}: {page.url} ===\n"
-            combined += f"{'=' * 80}\n\n"
+            parts.append(f"{'=' * 80}\n")
+            parts.append(f"=== PAGE {idx}: {page.url} ===\n")
+            parts.append(f"{'=' * 80}\n\n")
 
             # Page title (if exists)
             if page.title:
-                combined += f"Title: {page.title}\n\n"
+                parts.append(f"Title: {page.title}\n\n")
 
             # Page content
-            combined += f"{page.content}\n\n"
+            parts.append(f"{page.content}\n\n")
 
             # End marker
-            combined += f"{'=' * 80}\n"
-            combined += f"=== END PAGE {idx} ===\n"
-            combined += f"{'=' * 80}\n\n\n"
+            parts.append(f"{'=' * 80}\n")
+            parts.append(f"=== END PAGE {idx} ===\n")
+            parts.append(f"{'=' * 80}\n\n\n")
 
-        return combined
+        return ''.join(parts)
 
-    def _split_into_chunks(self, content: str, chunk_size: int = 30000) -> List[str]:
+    def _split_into_chunks(self, content: str, chunk_size: int) -> List[str]:
         """
         Split content into chunks without breaking mid-sentence.
 
@@ -362,7 +351,7 @@ class WebScraperStep(BasePipelineStep):
 
         Args:
             content: Full combined text
-            chunk_size: Target chunk size in characters (default 30000)
+            chunk_size: Target chunk size in characters
 
         Returns:
             List of content chunks, each ≤ chunk_size characters
@@ -509,7 +498,7 @@ class WebScraperStep(BasePipelineStep):
         from .prompts import FINAL_SUMMARY_SYSTEM_PROMPT, create_final_summary_prompt
 
         # Edge case: Content fits in single batch (skip batch layer)
-        if len(content) <= 30000:
+        if len(content) <= self.chunk_size:
             logfire.info(
                 "Content fits in single batch, using direct summarization",
                 content_length=len(content)
@@ -546,7 +535,7 @@ class WebScraperStep(BasePipelineStep):
                     return content[:3000]
 
         # Main flow: Multi-batch processing
-        chunks = self._split_into_chunks(content, chunk_size=30000)
+        chunks = self._split_into_chunks(content, chunk_size=self.chunk_size)
         total_batches = len(chunks)
 
         logfire.info(

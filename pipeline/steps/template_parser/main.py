@@ -50,6 +50,10 @@ class TemplateParserStep(BasePipelineStep):
         self.max_tokens = 2000
         self.temperature = 0.1  # Low temperature for consistent structured output
 
+        # Template validation constants
+        self.min_template_length = 20
+        self.max_template_length = 5000
+
         # Create pydantic-ai agent for structured output
         # This agent automatically:
         # - Validates output against TemplateAnalysis schema
@@ -73,21 +77,21 @@ class TemplateParserStep(BasePipelineStep):
         - recipient_name: Non-empty string
         - recipient_interest: Non-empty string
         """
-        if not pipeline_data.email_template or not pipeline_data.email_template.strip():
+        if not (pipeline_data.email_template or '').strip():
             return "email_template is empty or missing"
 
-        if not pipeline_data.recipient_name or not pipeline_data.recipient_name.strip():
+        if not (pipeline_data.recipient_name or '').strip():
             return "recipient_name is empty or missing"
 
-        if not pipeline_data.recipient_interest or not pipeline_data.recipient_interest.strip():
+        if not (pipeline_data.recipient_interest or '').strip():
             return "recipient_interest is empty or missing"
 
         # Validate template has reasonable length
-        if len(pipeline_data.email_template) < 20:
-            return "email_template is too short (< 20 characters)"
+        if len(pipeline_data.email_template) < self.min_template_length:
+            return f"email_template is too short (< {self.min_template_length} characters)"
 
-        if len(pipeline_data.email_template) > 5000:
-            return "email_template is too long (> 5000 characters)"
+        if len(pipeline_data.email_template) > self.max_template_length:
+            return f"email_template is too long (> {self.max_template_length} characters)"
 
         return None
 
@@ -102,86 +106,70 @@ class TemplateParserStep(BasePipelineStep):
         4. Update PipelineData
         5. Return success result
         """
+        # Extract placeholders locally (for comparison)
+        local_placeholders = extract_placeholders(pipeline_data.email_template)
+        placeholder_count = len(local_placeholders)
+
+        logfire.info(
+            "Analyzing template",
+            placeholder_count=placeholder_count,
+            template_length=len(pipeline_data.email_template)
+        )
+
+        # Create prompt
+        user_prompt = create_user_prompt(
+            email_template=pipeline_data.email_template,
+            recipient_name=pipeline_data.recipient_name,
+            recipient_interest=pipeline_data.recipient_interest
+        )
+
+        # Call pydantic-ai agent for structured output
+        # Agent automatically:
+        # - Sends request to Anthropic API
+        # - Validates response against TemplateAnalysis schema
+        # - Retries on validation failures
+        # - Logs everything to Logfire (inputs, outputs, tokens, cost, latency)
+        logfire.info("Running pydantic-ai agent for template analysis")
+
         try:
-            # Extract placeholders locally (for comparison)
-            local_placeholders = extract_placeholders(pipeline_data.email_template)
-            placeholder_count = len(local_placeholders)
+            result = await self.agent.run(user_prompt)
+            analysis = result.output  # Already validated TemplateAnalysis instance
 
             logfire.info(
-                "Analyzing template",
-                placeholder_count=placeholder_count,
-                template_length=len(pipeline_data.email_template)
+                "Template analysis completed successfully",
+                template_type=analysis.template_type.value,
+                search_term_count=len(analysis.search_terms)
             )
 
-            # Create prompt
-            user_prompt = create_user_prompt(
-                email_template=pipeline_data.email_template,
-                recipient_name=pipeline_data.recipient_name,
-                recipient_interest=pipeline_data.recipient_interest
-            )
-
-            # Call pydantic-ai agent for structured output
-            # Agent automatically:
-            # - Sends request to Anthropic API
-            # - Validates response against TemplateAnalysis schema
-            # - Retries on validation failures
-            # - Logs everything to Logfire (inputs, outputs, tokens, cost, latency)
-            logfire.info("Running pydantic-ai agent for template analysis")
-
-            try:
-                result = await self.agent.run(user_prompt)
-                analysis = result.output  # Already validated TemplateAnalysis instance
-
-                logfire.info(
-                    "Template analysis completed successfully",
-                    template_type=analysis.template_type.value,
-                    search_term_count=len(analysis.search_terms)
-                )
-
-            except Exception as e:
-                # Catch all agent errors (API errors, validation errors, etc.)
-                error_msg = f"Agent failed to analyze template: {str(e)}"
-                logfire.error("Template analysis failed", error=error_msg)
-                raise ExternalAPIError(error_msg)
-
-            # Update PipelineData
-            pipeline_data.search_terms = analysis.search_terms
-            pipeline_data.template_type = analysis.template_type
-            pipeline_data.template_analysis = {
-                "placeholders": analysis.placeholders,
-                "local_placeholders": local_placeholders,  # For debugging
-            }
-
-            # Log final state
-            logfire.info(
-                "PipelineData updated",
-                search_terms=pipeline_data.search_terms,
-                template_type=pipeline_data.template_type.value
-            )
-
-            # Return success
-            return StepResult(
-                success=True,
-                step_name=self.step_name,
-                metadata={
-                    "template_type": analysis.template_type.value,
-                    "search_term_count": len(analysis.search_terms),
-                    "placeholder_count": len(analysis.placeholders),
-                    "model_used": self.model
-                }
-            )
-
-        except ExternalAPIError:
-            # Re-raise API errors (retriable)
-            raise
-        except ValidationError:
-            # Re-raise validation errors (not retriable)
-            raise
         except Exception as e:
-            # Catch-all for unexpected errors
-            logfire.error(
-                "Unexpected error in template parser",
-                error=str(e),
-                error_type=type(e).__name__
-            )
-            raise
+            # Catch all agent errors (API errors, validation errors, etc.)
+            error_msg = f"Agent failed to analyze template: {str(e)}"
+            logfire.error("Template analysis failed", error=error_msg)
+            raise ExternalAPIError(error_msg)
+
+        # Update PipelineData
+        pipeline_data.search_terms = analysis.search_terms
+        pipeline_data.template_type = analysis.template_type
+        pipeline_data.template_analysis = {
+            "placeholders": analysis.placeholders,
+            "local_placeholders": local_placeholders,  # For debugging
+        }
+
+        # Log final state
+        logfire.info(
+            "PipelineData updated",
+            search_terms=pipeline_data.search_terms,
+            template_type=pipeline_data.template_type.value
+        )
+
+        # Return success
+        return StepResult(
+            success=True,
+            step_name=self.step_name,
+            metadata={
+                "template_type": analysis.template_type.value,
+                "search_term_count": len(analysis.search_terms),
+                "placeholder_count": len(analysis.placeholders),
+                "model_used": self.model
+            }
+        )

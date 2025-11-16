@@ -7,10 +7,9 @@ all pipeline steps in the correct order.
 
 from pipeline.core.runner import PipelineRunner
 from pipeline.steps.template_parser.main import TemplateParserStep
-# TODO: change this later as the packages are implemented
-# from pipeline.steps.web_scraper.main import WebScraperStep
-# from pipeline.steps.arxiv_helper.main import ArxivHelperStep
-# from pipeline.steps.email_composer.main import EmailComposerStep
+from pipeline.steps.web_scraper.main import WebScraperStep
+from pipeline.steps.arxiv_helper.main import ArxivHelperStep
+from pipeline.steps.email_composer.main import EmailComposerStep
 
 
 def create_email_pipeline() -> PipelineRunner:
@@ -58,9 +57,8 @@ def create_email_pipeline() -> PipelineRunner:
     # Register steps in execution order
     # Each step inherits from BasePipelineStep and implements _execute_step()
     runner.register_step(TemplateParserStep())
-    # TODO: change this later as the packages are implemented
-    # runner.register_step(WebScraperStep())
-    # runner.register_step(ArxivHelperStep())
-    # runner.register_step(EmailComposerStep())
+    runner.register_step(WebScraperStep())
+    runner.register_step(ArxivHelperStep())
+    runner.register_step(EmailComposerStep())
 
     return runner

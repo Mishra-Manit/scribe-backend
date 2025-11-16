@@ -19,7 +19,7 @@ from pipeline.core.runner import BasePipelineStep
 from pipeline.models.core import PipelineData, StepResult
 from utils.llm_agent import create_agent
 
-from .models import ComposedEmail, EmailValidationResult
+from .models import ComposedEmail
 from .prompts import SYSTEM_PROMPT, create_composition_prompt
 from .utils import validate_email, clean_email_formatting
 from .db_utils import write_email_to_db, increment_user_generation_count
@@ -300,13 +300,12 @@ class EmailComposerStep(BasePipelineStep):
                         )
 
                         # Return despite validation failure
+                        # Note: Token usage is already logged by pydantic-ai
                         composed_email = ComposedEmail(
                             email_content=cleaned_email,
                             validation_result=validation_result,
                             generation_metadata={
                                 "attempts": attempt + 1,
-                                "input_tokens": response.usage.input_tokens,
-                                "output_tokens": response.usage.output_tokens,
                                 "validation_failed": True
                             }
                         )

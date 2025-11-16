@@ -187,7 +187,238 @@ UPDATE THIS DOCUMENT WITH THE FOLLOWING:
 
 ---
 
-## Development Workflow with Makefile
+## Key Architectural Improvements Implemented
+
+### Two-Tier Summarization Architecture (Web Scraper Step)
+
+**Problem:** Direct summarization of large web content (>30K characters) can lead to information loss and hallucinations.
+
+**Solution:** Implemented intelligent two-tier summarization with batch processing:
+
+```
+Content ≤30K chars:
+└─> Direct Summarization (Haiku) → Final Output
+
+Content >30K chars:
+├─> Step 1: Split into 30K-char chunks (sentence-aware splitting)
+├─> Step 2: Batch Summarization (Haiku) for each chunk
+│   └─> Extraction focus: preserve ALL facts, add [PAGE X] markers
+├─> Step 3: Combine batch summaries with markers
+└─> Step 4: Final Synthesis (Sonnet + Chain-of-Thought)
+    └─> Multi-source verification, relevance filtering, structured output
+```
+
+**Model Selection Strategy:**
+- **Haiku 4.5**: Fast extraction, batch processing, deterministic (temp 0.0)
+- **Sonnet 4.5**: High-quality synthesis, Chain-of-Thought reasoning, factual (temp 0.2)
+
+**Anti-Hallucination Safeguards:**
+- Uncertainty markers: `[UNCERTAIN]`, `[SINGLE SOURCE]`
+- Multi-source confirmation requirement
+- Verbatim extraction from sources
+- "If not found, state 'Not found in sources'" policy
+
+**Benefits:**
+- ✅ No information loss for large content
+- ✅ Maintains source attribution throughout
+- ✅ Cost-effective (Haiku for bulk processing)
+- ✅ High quality final output (Sonnet synthesis)
+- ✅ Prevents hallucinations through verification
+
+**Implementation Location:** `pipeline/steps/web_scraper/main.py:_summarize_content()`
+
+---
+
+### Playwright Integration for JavaScript Support
+
+**Migration:** httpx (static HTML) → Playwright (headless browser)
+
+**Why:** Modern academic websites rely heavily on JavaScript rendering
+
+**Features:**
+- Headless Chromium browser with full JavaScript support
+- Isolated browser contexts per URL (prevent cross-contamination)
+- Network idle waiting (ensures all content loaded)
+- Semaphore-based concurrency control (max 2 concurrent)
+- Automatic cleanup with context managers
+
+**Production Considerations:**
+- ~300MB browser binaries (requires `playwright install chromium`)
+- Container-safe with `--no-sandbox` flag
+- Memory footprint monitoring required on Render
+
+**Implementation Location:** `pipeline/steps/web_scraper/utils.py:scrape_url()`
+
+---
+
+### ArXiv Relevance Scoring Algorithm
+
+**Four-Factor Scoring System:**
+
+1. **Author Match (0.4 weight):** Is recipient an author?
+2. **Topic Match (0.3 weight):** Abstract mentions research interest?
+3. **Recency (0.2 weight):** Papers from last 5 years score higher
+4. **Primary Author (0.1 weight):** Bonus if recipient is first author
+
+**Formula:**
+```python
+score = (author_match * 0.4) + (topic_score * 0.3) + (recency * 0.2) + (primary_author * 0.1)
+```
+
+**Conditional Execution:**
+- Only runs for `template_type == RESEARCH`
+- Non-fatal if ArXiv search fails (continues pipeline)
+- Returns top 5 most relevant papers
+
+**Implementation Location:** `pipeline/steps/arxiv_helper/utils.py:calculate_relevance_score()`
+
+---
+
+### Pydantic-AI Agent Integration
+
+**Unified LLM Interface Pattern:**
+
+Created `utils/llm_agent.py:create_agent()` factory function for all Anthropic Claude calls:
+
+**Benefits:**
+- ✅ Automatic Logfire instrumentation (prompts, responses, tokens, cost, latency)
+- ✅ Built-in retry logic with exponential backoff
+- ✅ Structured output validation via Pydantic models
+- ✅ Consistent error handling across all steps
+- ✅ Temperature and token configuration per agent
+
+**Usage Pattern:**
+```python
+# Template Parser - structured extraction
+agent = create_agent(
+    model="anthropic:claude-haiku-4-5",
+    output_type=TemplateAnalysis,  # Pydantic model
+    temperature=0.1,  # Deterministic
+    max_tokens=2000,
+    retries=2
+)
+
+# Email Composer - creative writing
+agent = create_agent(
+    model="anthropic:claude-sonnet-4-5-20250929",
+    temperature=0.7,  # Creative
+    max_tokens=2000,
+    retries=1
+)
+```
+
+**Implementation Location:** `utils/llm_agent.py`
+
+---
+
+### Email Validation with Retry Logic
+
+**Three-Attempt Validation System:**
+
+1. Generate email with Claude
+2. Validate quality:
+   - Length checks (50-10,000 chars)
+   - Placeholder detection (`{{...}}`, `[...]`)
+   - Recipient name verification
+   - Publication mentions (for RESEARCH template)
+   - Generic phrase detection ("your work", "your research")
+3. If invalid and attempts < 3: regenerate
+4. If attempts exhausted: use last attempt with warnings
+
+**Validation Result Metadata:**
+```python
+class EmailValidationResult:
+    is_valid: bool
+    issues: List[str]  # Fatal problems
+    warnings: List[str]  # Non-fatal concerns
+    mentions_publications: bool
+    has_placeholders: bool
+    word_count: int
+```
+
+**Implementation Location:** `pipeline/steps/email_composer/utils.py:validate_email()`
+
+---
+
+### Smart Chunking Algorithm
+
+**Sentence-Boundary-Aware Splitting:**
+
+**Goal:** Split large content without breaking mid-sentence
+
+**Algorithm:**
+1. Try to split at `chunk_size` (30,000 chars)
+2. Look backward up to 500 chars for sentence boundary (`.`, `!`, `?`, `\n\n`)
+3. If no boundary found, split at word boundary (last space)
+4. If still no boundary, hard split at `chunk_size`
+
+**Priority of Split Points:**
+```python
+sentence_endings = ['\n\n', '. ', '.\n', '! ', '!\n', '? ', '?\n']
+```
+
+**Benefits:**
+- ✅ Preserves semantic meaning
+- ✅ Prevents incomplete sentences
+- ✅ Improves batch summarization quality
+
+**Implementation Location:** `pipeline/steps/web_scraper/main.py:_split_into_chunks()`
+
+---
+
+### Production-Ready Error Handling
+
+**Three-Level Error Strategy:**
+
+1. **Step-Level Errors:**
+   - Caught by `BasePipelineStep.execute()`
+   - Logged to Logfire with full context
+   - Propagated to PipelineRunner
+
+2. **Pipeline-Level Errors:**
+   - Caught by `PipelineRunner.run()`
+   - Logged with task_id correlation
+   - Returned to Celery task
+
+3. **External API Errors:**
+   - Retry logic with exponential backoff
+   - Graceful degradation (e.g., ArXiv fails → continue without papers)
+   - Detailed error logging for debugging
+
+**Non-Fatal Failures:**
+- ArXiv search failure → empty papers list
+- Some URLs fail to scrape → continue with successful ones
+- Validation warnings → email still generated with metadata
+
+**Implementation Locations:**
+- `pipeline/core/runner.py:BasePipelineStep.execute()`
+- `pipeline/core/runner.py:PipelineRunner.run()`
+
+---
+
+### Stateless Design Benefits Realized
+
+**Zero Intermediate Database Writes:**
+- ✅ All pipeline state in-memory (`PipelineData` object)
+- ✅ Single database write at end (Step 4: EmailComposer)
+- ✅ No job tracking tables needed (Celery provides this)
+- ✅ Horizontally scalable Celery workers
+
+**Performance Impact:**
+- 🚀 Faster execution (no DB I/O during pipeline)
+- 🚀 Lower database load (1 write per job instead of 4+)
+- 🚀 Better observability (Logfire instead of DB queries)
+
+**Simplified Schema:**
+```sql
+-- Only 2 tables needed:
+users (id, email, display_name, generation_count)
+emails (id, user_id, recipient_name, recipient_interest, email_message, template_type, metadata)
+```
+
+**Implementation Location:** `pipeline/models/core.py:PipelineData`
+
+---
 
 ### Overview
 

@@ -1565,42 +1565,52 @@ class TemplateAnalysis(BaseModel):
     """
     Structured output from template analysis.
 
-    This is the expected JSON format from Claude API.
+    This is the expected JSON format from Claude API via pydantic-ai.
+    The agent automatically validates this schema and retries on failure.
     """
 
+    template_type: TemplateType = Field(
+        description="Type of template (RESEARCH, BOOK, or GENERAL)"
+    )
+
     search_terms: List[str] = Field(
-        ...,
-        min_items=1,
-        max_items=5,
-        description="Search queries to use for web scraping"
+        description="1-3 search queries for Google Custom Search",
+        min_length=1,
+        max_length=3
     )
 
     placeholders: List[str] = Field(
-        default_factory=list,
-        description="Placeholders found in template (e.g., {{name}}, {{research}})"
+        description="List of placeholder variables found in template",
+        default_factory=list
     )
 
-    tone: str = Field(
-        ...,
-        description="Detected tone of the template (formal, casual, enthusiastic, etc.)"
-    )
+    @field_validator("search_terms")
+    @classmethod
+    def validate_search_terms(cls, v: List[str]) -> List[str]:
+        """Ensure search terms are non-empty and reasonable length"""
+        cleaned = [term.strip() for term in v if term.strip()]
+        if not cleaned:
+            raise ValueError("At least one search term is required")
 
-    key_topics: List[str] = Field(
-        default_factory=list,
-        description="Main topics/themes in the template"
-    )
+        # Validate each term
+        for term in cleaned:
+            if len(term) < 3:
+                raise ValueError(f"Search term too short: '{term}'")
+            if len(term) > 200:
+                raise ValueError(f"Search term too long: '{term}'")
+
+        return cleaned
 
     class Config:
         json_schema_extra = {
             "example": {
+                "template_type": "RESEARCH",
                 "search_terms": [
                     "Dr. Jane Smith machine learning",
                     "Jane Smith publications research",
                     "Jane Smith university faculty page"
                 ],
-                "placeholders": ["{{name}}", "{{research}}", "{{university}}"],
-                "tone": "enthusiastic",
-                "key_topics": ["machine learning", "research", "publications"]
+                "placeholders": ["{{name}}", "{{research}}", "{{university}}"]
             }
         }
 ```
@@ -1609,193 +1619,300 @@ class TemplateAnalysis(BaseModel):
 
 ```python
 """
-Prompts for TemplateParser step.
+Prompts for Template Parser pipeline step.
 
-All Anthropic Claude prompts are defined here for easy modification.
+All Anthropic Claude prompts are defined here for easy modification and A/B testing.
 """
 
 
-def get_template_analysis_prompt(
+SYSTEM_PROMPT = """You are an expert email template analyzer specializing in academic outreach emails.
+
+Your task is to analyze cold email templates and extract:
+1. Template type (research, book, or general)
+2. Search terms for finding information about the recipient
+3. Template placeholders that require personalization
+
+TEMPLATE TYPES:
+- research: Template requires academic publications, papers, or research output
+- book: Template specifically mentions books authored by recipient
+- general: Template focuses on general professional information (bio, position, achievements)
+
+SEARCH TERM GUIDELINES:
+- Generate 1-3 focused search queries
+- Include recipient name + interest in each query
+- Vary specificity (broad to narrow)
+- Examples:
+  - "Dr. Jane Smith machine learning publications"
+  - "Jane Smith AI research papers"
+  - "Dr. Jane Smith Stanford University"
+
+STRICT OUTPUT REQUIREMENTS:
+- Respond with ONLY a single JSON object. Do not include any explanations, analysis, or commentary.
+- Do NOT wrap the JSON in code fences or markdown (do not use ```json or ```).
+- The JSON must strictly match the following schema:
+  {
+    "template_type": "research" | "book" | "general",
+    "search_terms": [string, ... 1 to 3 items],
+    "placeholders": [string, ...]
+  }
+- Constraints:
+  - search_terms: 1-3 items; each must include the recipient name and the research interest.
+  - placeholders: list every placeholder found in the template exactly as written, preserving double braces, e.g., "{{name}}".
+  - Do not include duplicate placeholders; maintain the natural order found in the template when possible.
+- If uncertain, choose the most conservative, defensible answer and still return valid JSON.
+
+Return ONLY the JSON object with no additional text before or after it."""
+
+
+def create_user_prompt(
     email_template: str,
     recipient_name: str,
-    recipient_interest: str,
-    template_type: str
+    recipient_interest: str
 ) -> str:
     """
     Generate prompt for template analysis.
 
     Args:
-        email_template: User's email template with placeholders
-        recipient_name: Full name of recipient
-        recipient_interest: Research area/interest
-        template_type: Type of template (research, book, general)
+        email_template: Raw template with placeholders
+        recipient_name: Professor/recipient name
+        recipient_interest: Research interest/area
 
     Returns:
-        Formatted prompt string
+        Formatted user prompt
     """
+    return f"""Analyze this email template for Professor {recipient_name}, who researches {recipient_interest}.
 
-    return f"""You are an expert at analyzing email templates and creating effective search queries.
-
-Your task is to analyze this cold email template and generate optimal search terms to find relevant information about the recipient.
-
-**EMAIL TEMPLATE:**
+TEMPLATE:
 {email_template}
 
-**RECIPIENT:**
-Name: {recipient_name}
-Interest/Field: {recipient_interest}
-Template Type: {template_type}
+RECIPIENT INFO:
+- Name: {recipient_name}
+- Research Area: {recipient_interest}
 
-**YOUR TASK:**
-Generate 3-5 search queries that will help us find:
-1. Professional information about {recipient_name}
-2. Publications, research, or books (depending on template type)
-3. Academic affiliations and positions
-4. Awards, honors, or notable achievements
+ANALYSIS REQUIRED:
+1. Determine template_type: Does it need research papers (research), books (book), or general info (general)?
+2. Generate search_terms: Create 1-3 Google search queries to find information about this professor
+3. Extract placeholders: List all {{{{placeholder}}}} variables in the template
 
-**REQUIREMENTS:**
-- Search terms should be specific and targeted
-- Include variations of the recipient's name
-- Prioritize .edu domains and academic sources
-- For template_type='research': focus on papers and publications
-- For template_type='book': focus on authored books
-- For template_type='general': focus on professional bio and achievements
+OUTPUT FORMAT (STRICT):
+- Respond with ONLY a single JSON object. No markdown, no code fences, no commentary.
+- JSON schema:
+{{{{
+  "template_type": "research" | "book" | "general",
+  "search_terms": ["query1", "query2", "query3"],
+  "placeholders": ["{{{{name}}}}", "{{{{research}}}}"]
+}}}}
+- Constraints:
+  - 1-3 search_terms; each must include the recipient name and interest.
+  - placeholders must match the template exactly, including double braces (e.g., "{{{{name}}}}").
 
-**OUTPUT FORMAT (JSON):**
-Return ONLY valid JSON matching this structure:
-{{
-  "search_terms": ["query 1", "query 2", "query 3"],
-  "placeholders": ["{{name}}", "{{research}}"],
-  "tone": "enthusiastic",
-  "key_topics": ["machine learning", "computer vision"]
-}}
+Return ONLY the JSON, with no additional text before or after it."""
+```
 
-Generate the JSON now:"""
+#### File: `pipeline/steps/template_parser/utils.py`
+
+```python
+"""
+Template Parser Utilities
+
+Helper functions for placeholder extraction and template analysis.
+"""
+
+import re
+from typing import List
+
+
+def extract_placeholders(template: str) -> List[str]:
+    """
+    Extract all {{placeholder}} patterns from template.
+
+    Args:
+        template: Email template string
+
+    Returns:
+        List of unique placeholders (including braces)
+
+    Example:
+        >>> extract_placeholders("Hi {{name}}, I loved {{research}}!")
+        ['{{name}}', '{{research}}']
+    """
+    # Match {{variable}} pattern
+    pattern = r'\{\{[^}]+\}\}'
+    matches = re.findall(pattern, template)
+
+    # Return unique placeholders in order of appearance
+    seen = set()
+    unique_matches = []
+    for match in matches:
+        if match not in seen:
+            seen.add(match)
+            unique_matches.append(match)
+
+    return unique_matches
 ```
 
 #### File: `pipeline/steps/template_parser/main.py`
 
 ```python
 """
-TemplateParser step implementation.
+Template Parser Step - Phase 5 Step 1
 
-Extracts search terms from email template using Anthropic Claude API.
+Analyzes email templates using Anthropic Claude to extract:
+- Search terms for web scraping
+- Template type classification (RESEARCH/BOOK/GENERAL)
+- Template placeholders that require personalization
 """
 
-import anthropic
 import logfire
 from typing import Optional
-import os
 
 from pipeline.core.runner import BasePipelineStep
 from pipeline.models.core import PipelineData, StepResult
 from pipeline.core.exceptions import ExternalAPIError, ValidationError
-from pipeline.steps.template_parser.models import TemplateAnalysis
-from pipeline.steps.template_parser.prompts import get_template_analysis_prompt
+from config.settings import settings
+from utils.llm_agent import create_agent
+
+from .models import TemplateAnalysis
+from .prompts import SYSTEM_PROMPT, create_user_prompt
+from .utils import extract_placeholders
 
 
 class TemplateParserStep(BasePipelineStep):
     """
-    Step 1: Parse email template and extract search terms.
+    Step 1: Parse email template and extract metadata.
 
-    Uses Anthropic Claude to analyze the template and generate
-    optimal search queries for finding recipient information.
+    Responsibilities:
+    - Call Anthropic Claude API for template analysis
+    - Extract search terms for web scraping
+    - Classify template type (RESEARCH/BOOK/GENERAL)
+    - Update PipelineData with results
+
+    Updates PipelineData fields:
+    - search_terms: List[str]
+    - template_type: TemplateType
+    - template_analysis: Dict[str, Any]
     """
 
     def __init__(self):
-        super().__init__("template_parser")
+        """Initialize template parser step."""
+        super().__init__(step_name="template_parser")
 
-        # Initialize Anthropic client
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
+        # Validate API key is configured
+        if not settings.anthropic_api_key:
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
-        self.client = anthropic.Anthropic(api_key=api_key)
+        # Model configuration
+        self.model = "anthropic:claude-haiku-4-5"
+        self.max_tokens = 2000
+        self.temperature = 0.1  # Low temperature for consistent structured output
+
+        # Create pydantic-ai agent for structured output
+        # This agent automatically:
+        # - Validates output against TemplateAnalysis schema
+        # - Retries on validation failures
+        # - Logs all inputs/outputs to Logfire
+        self.agent = create_agent(
+            model=self.model,
+            output_type=TemplateAnalysis,
+            system_prompt=SYSTEM_PROMPT,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            retries=2
+        )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
         """
         Validate that required input fields are present.
 
-        Args:
-            pipeline_data: Shared pipeline data
-
-        Returns:
-            Error message if validation fails, None if valid
+        Required:
+        - email_template: Non-empty string
+        - recipient_name: Non-empty string
+        - recipient_interest: Non-empty string
         """
-        if not pipeline_data.email_template:
-            return "email_template is empty"
+        if not pipeline_data.email_template or not pipeline_data.email_template.strip():
+            return "email_template is empty or missing"
 
-        if not pipeline_data.recipient_name:
-            return "recipient_name is empty"
+        if not pipeline_data.recipient_name or not pipeline_data.recipient_name.strip():
+            return "recipient_name is empty or missing"
 
-        if not pipeline_data.recipient_interest:
-            return "recipient_interest is empty"
+        if not pipeline_data.recipient_interest or not pipeline_data.recipient_interest.strip():
+            return "recipient_interest is empty or missing"
 
-        # Check for at least one placeholder
-        if "{{" not in pipeline_data.email_template:
-            return "email_template must contain at least one placeholder {{...}}"
+        # Validate template has reasonable length
+        if len(pipeline_data.email_template) < 20:
+            return "email_template is too short (< 20 characters)"
+
+        if len(pipeline_data.email_template) > 5000:
+            return "email_template is too long (> 5000 characters)"
 
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
         """
-        Execute template analysis with Anthropic Claude.
+        Execute template parsing logic.
 
-        Updates pipeline_data.search_terms and pipeline_data.template_analysis
-
-        Args:
-            pipeline_data: Shared data object (modified in-place)
-
-        Returns:
-            StepResult with success/failure status
+        Steps:
+        1. Extract local placeholders (for validation)
+        2. Call Anthropic API with structured output
+        3. Validate response with Pydantic
+        4. Update PipelineData
+        5. Return success result
         """
-        # Generate prompt
-        prompt = get_template_analysis_prompt(
-            email_template=pipeline_data.email_template,
-            recipient_name=pipeline_data.recipient_name,
-            recipient_interest=pipeline_data.recipient_interest,
-            template_type=pipeline_data.template_type.value
-        )
-
         try:
-            # Call Anthropic API with Logfire span
-            with logfire.span("anthropic.template_analysis"):
-                response = self.client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=1024,
-                    temperature=0.3,  # Lower temp for more consistent output
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-
-            # Extract JSON response
-            response_text = response.content[0].text
+            # Extract placeholders locally (for comparison)
+            local_placeholders = extract_placeholders(pipeline_data.email_template)
+            placeholder_count = len(local_placeholders)
 
             logfire.info(
-                "Anthropic response received",
-                response_length=len(response_text),
-                model=response.model
+                "Analyzing template",
+                placeholder_count=placeholder_count,
+                template_length=len(pipeline_data.email_template)
             )
 
-            # Parse and validate response with Pydantic
-            try:
-                analysis = TemplateAnalysis.model_validate_json(response_text)
-            except Exception as e:
-                raise ValidationError(f"Failed to parse LLM response as JSON: {e}")
+            # Create prompt
+            user_prompt = create_user_prompt(
+                email_template=pipeline_data.email_template,
+                recipient_name=pipeline_data.recipient_name,
+                recipient_interest=pipeline_data.recipient_interest
+            )
 
-            # Update pipeline data
+            # Call pydantic-ai agent for structured output
+            # Agent automatically:
+            # - Sends request to Anthropic API
+            # - Validates response against TemplateAnalysis schema
+            # - Retries on validation failures
+            # - Logs everything to Logfire (inputs, outputs, tokens, cost, latency)
+            logfire.info("Running pydantic-ai agent for template analysis")
+
+            try:
+                result = await self.agent.run(user_prompt)
+                analysis = result.output  # Already validated TemplateAnalysis instance
+
+                logfire.info(
+                    "Template analysis completed successfully",
+                    template_type=analysis.template_type.value,
+                    search_term_count=len(analysis.search_terms)
+                )
+
+            except Exception as e:
+                # Catch all agent errors (API errors, validation errors, etc.)
+                error_msg = f"Agent failed to analyze template: {str(e)}"
+                logfire.error("Template analysis failed", error=error_msg)
+                raise ExternalAPIError(error_msg)
+
+            # Update PipelineData
             pipeline_data.search_terms = analysis.search_terms
+            pipeline_data.template_type = analysis.template_type
             pipeline_data.template_analysis = {
                 "placeholders": analysis.placeholders,
-                "tone": analysis.tone,
-                "key_topics": analysis.key_topics
+                "local_placeholders": local_placeholders,  # For debugging
             }
 
+            # Log final state
             logfire.info(
-                "Template parsing completed",
-                search_terms_count=len(analysis.search_terms),
-                tone=analysis.tone
+                "PipelineData updated",
+                search_terms=pipeline_data.search_terms,
+                template_type=pipeline_data.template_type.value
             )
 
             # Return success
@@ -1803,20 +1920,26 @@ class TemplateParserStep(BasePipelineStep):
                 success=True,
                 step_name=self.step_name,
                 metadata={
-                    "search_terms_extracted": len(analysis.search_terms),
-                    "placeholders_found": len(analysis.placeholders),
-                    "tone": analysis.tone
+                    "template_type": analysis.template_type.value,
+                    "search_term_count": len(analysis.search_terms),
+                    "placeholder_count": len(analysis.placeholders),
+                    "model_used": self.model
                 }
             )
 
-        except anthropic.APIError as e:
-            # Anthropic API error - retriable
-            logfire.error("Anthropic API error", error=str(e))
-            raise ExternalAPIError(f"Anthropic API failed: {e}")
-
+        except ExternalAPIError:
+            # Re-raise API errors (retriable)
+            raise
+        except ValidationError:
+            # Re-raise validation errors (not retriable)
+            raise
         except Exception as e:
-            # Unexpected error
-            logfire.error("Unexpected error in template parsing", error=str(e))
+            # Catch-all for unexpected errors
+            logfire.error(
+                "Unexpected error in template parser",
+                error=str(e),
+                error_type=type(e).__name__
+            )
             raise
 ```
 
@@ -1824,382 +1947,1087 @@ class TemplateParserStep(BasePipelineStep):
 
 ### 4.3 Step 2: Web Scraper
 
-**Purpose:** Fetch and scrape web content using search terms from Step 1.
+**Purpose:** Fetch and scrape web content using search terms from Step 1, with advanced two-tier summarization for large content.
+
+**Key Innovations:**
+- **Two-Tier Summarization Architecture**: Batch processing for content > 30K chars with final synthesis
+- **Playwright Integration**: Headless browser with JavaScript rendering support
+- **Anti-Hallucination Engineering**: Uncertainty markers, source verification, multi-source confirmation
+- **Concurrent Scraping**: Semaphore-based rate limiting (max 2 concurrent)
+- **Smart Chunking**: Sentence-boundary-aware splitting for large content
+
+**Architecture:**
+
+```
+Content Size ≤ 30K chars:
+    Google Search → Playwright Scrape → Direct Summarization (Haiku) → Output
+
+Content Size > 30K chars:
+    Google Search → Playwright Scrape → Split into Batches (30K each)
+                                          ↓
+                                    Batch Summarization (Haiku, extraction-focused)
+                                          ↓
+                                    Combine Batch Summaries
+                                          ↓
+                                    Final Synthesis (Sonnet + COT reasoning) → Output
+```
+
+**Models Used:**
+- **Claude Haiku 4.5**: Fast batch summarization and direct summarization (<30K chars)
+- **Claude Sonnet 4.5**: High-quality final synthesis with chain-of-thought reasoning (>30K chars)
 
 #### File: `pipeline/steps/web_scraper/utils.py`
 
 ```python
 """
-Utility functions for web scraping.
+Web Scraper Utilities
 
-Migrated from legacy api/legacy/app.py with improvements:
-- Async with httpx (replacing requests)
+Web scraping functions with Playwright for JavaScript-heavy sites.
+"""
+
+import re
+import logfire
+from bs4 import BeautifulSoup, Comment
+from playwright.async_api import Browser
+from typing import Optional, Tuple
+
+
+def clean_text(html: str) -> str:
+    """Normalize HTML into readable plain text."""
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Drop non-content elements
+    for element in soup(["script", "style", "noscript", "template", "svg"]):
+        element.decompose()
+
+    # Remove inline comments to avoid boilerplate
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+
+    text = soup.get_text(separator="\n")
+
+    # Split into lines, trim whitespace, and discard empties
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    cleaned_text = "\n".join(lines)
+
+    # Remove non-ASCII characters
+    cleaned_text = re.sub(r"[^\x00-\x7F]+", "", cleaned_text)
+
+    # Collapse multiple spaces
+    cleaned_text = re.sub(r"[ \t]+", " ", cleaned_text)
+
+    # Collapse multiple newlines
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
+
+    return cleaned_text.strip()
+
+
+async def scrape_url(
+    url: str,
+    browser: Browser,
+    timeout: float = 10.0,
+    max_content_length: int = 500000  # 500KB limit
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Scrape text content from a URL using Playwright (headless browser).
+
+    Args:
+        url: URL to scrape
+        browser: Playwright Browser instance (persistent across calls)
+        timeout: Page load timeout in seconds
+        max_content_length: Max content size (unused but kept for compatibility)
+
+    Returns:
+        Tuple of (title, content) or (None, None) if failed
+
+    Note:
+        Returns None for both on failure (no exceptions raised)
+        Creates a new BrowserContext per URL for isolation
+    """
+    # Skip non-HTML files
+    if url.endswith(('.pdf', '.doc', '.docx', '.ppt', '.pptx')):
+        logfire.info("Skipping non-HTML URL", url=url)
+        return None, None
+
+    # Skip video/media platforms (not useful for text scraping)
+    blocked_domains = [
+        'youtube.com',
+        'youtu.be',
+        'vimeo.com',
+    ]
+    url_lower = url.lower()
+    if any(domain in url_lower for domain in blocked_domains):
+        logfire.info("Skipping blocked domain (video/media platform)", url=url)
+        return None, None
+
+    context = None
+    page = None
+
+    try:
+        # Create new browser context for isolation (cookies, storage, etc.)
+        context = await browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        )
+
+        # Create page within context
+        page = await context.new_page()
+
+        # Navigate to URL with timeout
+        response = await page.goto(
+            url,
+            wait_until='domcontentloaded',
+            timeout=int(timeout * 1000)  # Convert to milliseconds
+        )
+
+        # Check response status
+        if not response or response.status >= 400:
+            logfire.warning("HTTP error scraping URL", url=url, status=response.status if response else "no response")
+            return None, None
+
+        # Wait for network to be idle (all content loaded)
+        await page.wait_for_load_state('networkidle', timeout=int(timeout * 1000))
+
+        # Extract title
+        title = await page.title()
+        if not title:
+            title = None
+
+        # Extract HTML and clean to normalized text
+        html_content = await page.content()
+        cleaned = clean_text(html_content)
+
+        if max_content_length and len(cleaned) > max_content_length:
+            logfire.info(
+                "Truncating content due to max_content_length",
+                url=url,
+                original_length=len(cleaned),
+                max_content_length=max_content_length
+            )
+            cleaned = cleaned[:max_content_length]
+
+        if not cleaned or len(cleaned) < 100:
+            logfire.info("Insufficient content after cleaning", url=url)
+            return None, None
+
+        logfire.info(
+            "Successfully scraped URL with Playwright",
+            url=url,
+            content_length=len(cleaned),
+            word_count=len(cleaned.split())
+        )
+
+        return title, cleaned
+
+    except Exception as e:
+        # Catch all errors: TimeoutError, network errors, etc.
+        logfire.warning("Error scraping URL with Playwright", url=url, error=str(e))
+        return None, None
+
+    finally:
+        # Always cleanup context (includes closing page)
+        if context:
+            await context.close()
+```
+
+#### File: `pipeline/steps/web_scraper/google_search.py`
+
+```python
+"""
+Google Custom Search API integration.
+
+Migrated from legacy code with improvements:
+- Async implementation with httpx
 - Better error handling
-- Rate limiting
-- Logfire integration
+- Result deduplication
 """
 
 import httpx
 import logfire
-from bs4 import BeautifulSoup
-from typing import List, Dict, Optional
-import re
-import asyncio
+from typing import List, Dict, Any
+from config.settings import settings
 
 
-async def google_custom_search(
-    search_term: str,
-    api_key: str,
-    cse_id: str,
-    num_results: int = 3
-) -> List[Dict[str, str]]:
-    """
-    Perform Google Custom Search API query.
+class GoogleSearchClient:
+    """Client for Google Custom Search API."""
 
-    Args:
-        search_term: Query string
-        api_key: Google API key
-        cse_id: Custom Search Engine ID
-        num_results: Number of results to return (max 10)
+    def __init__(self):
+        """Initialize search client"""
+        self.api_key = settings.google_api_key
+        self.cse_id = settings.google_cse_id
+        self.base_url = "https://www.googleapis.com/customsearch/v1"
 
-    Returns:
-        List of search results with 'title', 'link', 'snippet'
-
-    Raises:
-        ExternalAPIError: If API call fails
-    """
-    url = "https://www.googleapis.com/customsearch/v1"
-
-    params = {
-        "key": api_key,
-        "cx": cse_id,
-        "q": search_term,
-        "num": num_results
-    }
-
-    with logfire.span("google_custom_search", query=search_term):
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-
-            data = response.json()
-            results = data.get("items", [])
-
-            logfire.info(
-                "Google search completed",
-                query=search_term,
-                results_count=len(results)
+        # Validate credentials
+        if not self.api_key or not self.cse_id:
+            raise ValueError(
+                "Google API credentials missing. "
+                "Set GOOGLE_API_KEY and GOOGLE_CSE_ID in environment."
             )
 
-            return results
+    async def search(
+        self,
+        query: str,
+        num_results: int = 5,
+        timeout: float = 10.0
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform Google Custom Search.
 
-        except httpx.HTTPError as e:
-            logfire.error("Google API error", error=str(e))
-            raise ExternalAPIError(f"Google Custom Search failed: {e}")
+        Args:
+            query: Search query string
+            num_results: Number of results to return (max 10)
+            timeout: Request timeout in seconds
 
+        Returns:
+            List of search result dicts with 'link', 'title', 'snippet'
+        """
+        # Validate inputs
+        if not query.strip():
+            raise ValueError("Query cannot be empty")
 
-async def scrape_website(url: str, timeout: float = 10.0) -> Optional[str]:
-    """
-    Scrape text content from a URL.
+        num_results = min(num_results, 10)  # Google API max is 10
 
-    Args:
-        url: URL to scrape
-        timeout: Request timeout in seconds
+        # Build request params
+        params = {
+            "key": self.api_key,
+            "cx": self.cse_id,
+            "q": query.strip(),
+            "num": num_results
+        }
 
-    Returns:
-        Cleaned text content, or None if scraping fails
-    """
-    # Skip non-HTML files
-    if url.endswith(('.pdf', '.doc', '.docx', '.ppt', '.pptx')):
-        logfire.warning("Skipping non-HTML URL", url=url)
-        return None
+        logfire.info(
+            "Performing Google Custom Search",
+            query=query,
+            num_results=num_results
+        )
 
-    with logfire.span("scrape_website", url=url):
-        try:
-            # Headers to avoid being blocked
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-
-            async with httpx.AsyncClient(
-                timeout=timeout,
-                follow_redirects=True,
-                headers=headers
-            ) as client:
-                response = await client.get(url)
+        # Make async request
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.get(self.base_url, params=params)
                 response.raise_for_status()
 
-            # Parse HTML
-            soup = BeautifulSoup(response.content, "html.parser")
+                data = response.json()
+                items = data.get("items", [])
 
-            # Remove script and style elements
-            for element in soup(["script", "style", "nav", "footer", "header"]):
-                element.decompose()
+                logfire.info(
+                    "Google Search completed",
+                    results_found=len(items)
+                )
 
-            # Extract text
-            text = soup.get_text(separator=" ")
+                return items
 
-            # Clean up whitespace
-            lines = (line.strip() for line in text.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            cleaned_text = " ".join(chunk for chunk in chunks if chunk)
+            except httpx.HTTPStatusError as e:
+                logfire.error(
+                    "Google API HTTP error",
+                    status_code=e.response.status_code,
+                    response=e.response.text[:500]
+                )
+                raise
 
-            # Validate text is English and meaningful
-            if not is_english_text(cleaned_text) or len(cleaned_text) < 100:
-                logfire.warning("Scraped content too short or non-English", url=url)
-                return None
+    async def search_multiple_terms(
+        self,
+        queries: List[str],
+        results_per_query: int = 3
+    ) -> List[Dict[str, Any]]:
+        """
+        Search multiple queries and combine results.
 
-            logfire.info(
-                "Website scraped successfully",
-                url=url,
-                content_length=len(cleaned_text)
-            )
+        Args:
+            queries: List of search query strings
+            results_per_query: Results per query
 
-            return cleaned_text
+        Returns:
+            Combined list of unique search results (deduplicated by URL)
+        """
+        all_results = []
+        seen_urls = set()
 
-        except httpx.TimeoutException:
-            logfire.warning("Scraping timeout", url=url)
-            return None
+        for query in queries:
+            try:
+                results = await self.search(query, num_results=results_per_query)
 
-        except httpx.HTTPError as e:
-            logfire.warning("HTTP error during scraping", url=url, error=str(e))
-            return None
+                # Deduplicate by URL
+                for result in results:
+                    url = result.get("link", "")
+                    if url and url not in seen_urls:
+                        seen_urls.add(url)
+                        all_results.append(result)
 
-        except Exception as e:
-            logfire.warning("Unexpected scraping error", url=url, error=str(e))
-            return None
+            except Exception as e:
+                logfire.warning(
+                    "Search query failed, continuing with others",
+                    query=query,
+                    error=str(e)
+                )
+                continue
 
+        logfire.info(
+            "Multi-term search completed",
+            total_queries=len(queries),
+            unique_results=len(all_results)
+        )
 
-def is_english_text(text: str) -> bool:
-    """
-    Check if text is predominantly English.
-
-    Args:
-        text: Text to check
-
-    Returns:
-        True if text appears to be English
-    """
-    # Check for English alphabet characters
-    english_chars = sum(1 for c in text if c.isalpha() and ord(c) < 128)
-    total_chars = sum(1 for c in text if c.isalpha())
-
-    if total_chars == 0:
-        return False
-
-    # At least 80% English characters
-    return (english_chars / total_chars) > 0.8
-
-
-def clean_text(text: str, max_length: int = 5000) -> str:
-    """
-    Clean and truncate scraped text.
-
-    Args:
-        text: Raw text
-        max_length: Maximum length to keep
-
-    Returns:
-        Cleaned and truncated text
-    """
-    # Remove non-printable characters
-    text = re.sub(r'[^\x20-\x7E\n]', '', text)
-
-    # Collapse multiple spaces
-    text = re.sub(r' +', ' ', text)
-
-    # Collapse multiple newlines
-    text = re.sub(r'\n+', '\n', text)
-
-    # Truncate
-    if len(text) > max_length:
-        text = text[:max_length] + "..."
-
-    return text.strip()
+        return all_results
 ```
+
+#### File: `pipeline/steps/web_scraper/models.py`
+
+```python
+"""
+Web Scraper Step Models
+
+Pydantic models for scraping results and validation.
+"""
+
+from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
+
+
+class ScrapedPage(BaseModel):
+    """Single scraped webpage."""
+
+    url: str = Field(description="Source URL")
+
+    title: Optional[str] = Field(
+        description="Page title",
+        default=None,
+        max_length=500
+    )
+
+    content: str = Field(
+        description="Cleaned text content from page",
+        max_length=50000
+    )
+
+    word_count: int = Field(
+        description="Word count of content",
+        ge=0
+    )
+
+    scrape_time_seconds: float = Field(
+        description="Time taken to scrape this page",
+        default=0.0
+    )
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, v: str) -> str:
+        """Ensure content is non-empty after cleaning"""
+        if not v.strip():
+            raise ValueError("Content cannot be empty")
+        return v.strip()
+
+
+class ScrapingResult(BaseModel):
+    """Complete result from web scraping step."""
+
+    pages_scraped: List[ScrapedPage] = Field(
+        description="Successfully scraped pages",
+        default_factory=list
+    )
+
+    failed_urls: List[str] = Field(
+        description="URLs that failed to scrape",
+        default_factory=list
+    )
+
+    total_attempts: int = Field(
+        description="Total URLs attempted",
+        ge=0
+    )
+
+    total_content_length: int = Field(
+        description="Combined character count of all content",
+        ge=0
+    )
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate scraping success rate"""
+        if self.total_attempts == 0:
+            return 0.0
+        return len(self.pages_scraped) / self.total_attempts
+```
+
+#### File: `pipeline/steps/web_scraper/prompts.py`
+
+**Three-Level Prompting System:**
+
+The web scraper uses three distinct prompt strategies depending on content size and processing stage:
+
+1. **SUMMARIZATION_SYSTEM_PROMPT** (Direct summarization, ≤30K chars):
+   - Anti-hallucination rules: "ONLY include information EXPLICITLY stated"
+   - Source verification: "NEVER infer, speculate, or add information"
+   - Uncertainty markers: Mark ambiguous info as [UNCERTAIN] or [SINGLE SOURCE]
+   - Publication filtering: "ONLY include titles where professor is EXPLICITLY named as author"
+   - Structured output format with sections: PUBLICATIONS, RESEARCH AREAS, CURRENT POSITION, ACHIEVEMENTS
+   - Max 3000 characters output
+
+2. **BATCH_SUMMARIZATION_SYSTEM_PROMPT** (Extraction phase, >30K chars):
+   - Extraction-focused: "Extract EVERY verifiable fact" (completeness over conciseness)
+   - Source attribution: Include [PAGE X] markers for each fact
+   - No filtering: "DO NOT filter for relevance - extract everything"
+   - Verbatim quotes with attribution
+   - Max 4000 characters per batch
+
+3. **FINAL_SUMMARY_SYSTEM_PROMPT** (Synthesis phase, >30K chars):
+   - Chain-of-thought reasoning: Mental steps for fact verification, relevance filtering, synthesis
+   - Multi-source confirmation: Prioritize facts appearing in multiple batches
+   - Contradiction detection: Mark conflicts as [UNCERTAIN]
+   - Template-specific filtering: Emphasizes publications for RESEARCH, books for BOOK
+   - Max 3000 characters final output
+
+**Key Anti-Hallucination Strategies:**
+- Verification checklist: "Could I point to the specific part of the source where this appears?"
+- Conservative approach: "When in doubt, leave it out"
+- Explicit uncertainty: [UNCERTAIN] and [SINGLE SOURCE] markers
+- No general knowledge: "DO NOT use general knowledge about the professor"
+- Template-specific requirements prevent hallucination of publication titles
 
 #### File: `pipeline/steps/web_scraper/main.py`
 
 ```python
 """
-WebScraper step implementation.
+Web Scraper Step - Phase 5 Step 2
 
-Fetches web content based on search terms from TemplateParser.
+Performs web scraping using search terms from Step 1:
+- Google Custom Search API to find URLs
+- Async scraping with Playwright (headless browser)
+- Two-tier summarization for large content
+- Updates PipelineData with results
 """
 
-import os
 import logfire
-from typing import Optional, List, Dict, Set
 import asyncio
+from typing import Optional, List
 
 from pipeline.core.runner import BasePipelineStep
 from pipeline.models.core import PipelineData, StepResult
 from pipeline.core.exceptions import ExternalAPIError
-from pipeline.steps.web_scraper.utils import (
-    google_custom_search,
-    scrape_website,
-    clean_text
-)
+from config.settings import settings
+from utils.llm_agent import create_agent
+
+from .models import ScrapedPage, ScrapingResult
+from .google_search import GoogleSearchClient
+from .utils import scrape_url
+from .prompts import SUMMARIZATION_SYSTEM_PROMPT, create_summarization_prompt
 
 
 class WebScraperStep(BasePipelineStep):
     """
-    Step 2: Scrape web content using search terms.
+    Step 2: Web scraping and content extraction with two-tier summarization.
 
-    Uses Google Custom Search API to find relevant URLs,
-    then scrapes and cleans the content.
+    Responsibilities:
+    - Use search_terms from Step 1
+    - Perform Google Custom Search
+    - Scrape webpage content asynchronously with Playwright
+    - Batch processing for content > 30K chars
+    - Clean and summarize content (max 3000 chars)
+    - Update PipelineData
+
+    Updates PipelineData fields:
+    - scraped_content: str (summarized, max 3000 chars)
+    - scraped_urls: List[str]
+    - scraped_page_contents: Dict[str, str]
+    - scraping_metadata: Dict[str, Any]
     """
 
     def __init__(self):
-        super().__init__("web_scraper")
+        """Initialize web scraper step."""
+        super().__init__(step_name="web_scraper")
 
-        # Load API credentials
-        self.google_api_key = os.getenv("GOOGLE_API_KEY")
-        self.google_cse_id = os.getenv("GOOGLE_CSE_ID")
+        # Initialize clients
+        self.google_client = GoogleSearchClient()
 
-        if not self.google_api_key or not self.google_cse_id:
-            raise ValueError(
-                "GOOGLE_API_KEY and GOOGLE_CSE_ID environment variables must be set"
-            )
+        # Create pydantic-ai agent for content summarization
+        # Using Haiku 4.5 for fast, cost-effective fact extraction
+        # Temperature 0.0 for maximum factual accuracy (anti-hallucination)
+        self.summarization_agent = create_agent(
+            model="anthropic:claude-haiku-4-5",
+            system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
+            temperature=0.0,
+            max_tokens=2000,
+            retries=2
+        )
+
+        # Configuration
+        self.results_per_query = 3
+        self.max_pages_to_scrape = 5
+        self.scrape_timeout = 10.0
+        self.max_concurrent_scrapes = 2
+        self.batch_chunk_size = 30000  # Chars per batch
+        self.final_max_output_chars = 3000
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """Validate that search terms were extracted"""
+        """
+        Validate prerequisites from Step 1.
+
+        Required:
+        - search_terms: Non-empty list
+        - template_type: Must be set
+        - recipient_name and recipient_interest: Present
+        """
         if not pipeline_data.search_terms:
-            return "search_terms is empty (TemplateParser step must run first)"
+            return "search_terms is empty (Step 1 must run first)"
+
+        if not pipeline_data.template_type:
+            return "template_type not set (Step 1 must run first)"
+
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
         """
-        Execute web scraping.
+        Execute web scraping with two-tier summarization.
+
+        Flow:
+        1. Google Custom Search -> get URLs
+        2. Concurrent Playwright scraping -> raw content
+        3. Combine content with page markers
+        4. Two-tier summarization (if >30K chars)
+        5. Update PipelineData
 
         Updates:
-        - pipeline_data.scraped_content
-        - pipeline_data.scraped_urls
-        - pipeline_data.scraping_metadata
-
-        Args:
-            pipeline_data: Shared data object
+        - pipeline_data.scraped_content: Final summarized content
+        - pipeline_data.scraped_urls: List of successfully scraped URLs
+        - pipeline_data.scraped_page_contents: {url: raw_content} mapping
+        - pipeline_data.scraping_metadata: Scraping statistics
 
         Returns:
-            StepResult with scraping statistics
+            StepResult with scraping and summarization statistics
         """
-        all_content = []
-        scraped_urls: Set[str] = set()
-        total_urls_tried = 0
-        successful_scrapes = 0
-        failed_urls: List[str] = []
-
-        # Iterate through search terms
-        for search_term in pipeline_data.search_terms[:3]:  # Limit to first 3 terms
-            logfire.info("Processing search term", term=search_term)
-
-            try:
-                # Get search results
-                results = await google_custom_search(
-                    search_term=search_term,
-                    api_key=self.google_api_key,
-                    cse_id=self.google_cse_id,
-                    num_results=3
-                )
-
-                # Scrape each URL (with concurrency limit)
-                for result in results:
-                    url = result.get("link")
-                    if not url or url in scraped_urls:
-                        continue
-
-                    total_urls_tried += 1
-
-                    # Scrape website
-                    content = await scrape_website(url)
-
-                    if content:
-                        # Prioritize .edu and academic sites
-                        priority = 1 if any(domain in url for domain in ['.edu', 'scholar.google', 'researchgate']) else 2
-
-                        all_content.append({
-                            "content": content,
-                            "url": url,
-                            "priority": priority
-                        })
-
-                        scraped_urls.add(url)
-                        successful_scrapes += 1
-
-                        logfire.info(
-                            "URL scraped successfully",
-                            url=url,
-                            priority=priority,
-                            content_length=len(content)
-                        )
-                    else:
-                        failed_urls.append(url)
-
-                    # Stop if we have enough content
-                    if len(all_content) >= 5:
-                        break
-
-                # Rate limiting between search terms
-                await asyncio.sleep(0.5)
-
-            except ExternalAPIError as e:
-                logfire.error("Search term failed", term=search_term, error=str(e))
-                # Continue with next search term
-                continue
-
-            # Stop if we have enough content
-            if len(all_content) >= 5:
-                break
-
-        # Check if we got any content
-        if not all_content:
-            logfire.warning("No content scraped from any source")
-            return StepResult(
-                success=False,
-                step_name=self.step_name,
-                error="Failed to scrape any content from web sources",
-                warnings=["All scraping attempts failed"]
+        try:
+            # Step 1: Google Custom Search
+            logfire.info(
+                "Performing Google searches",
+                search_terms=pipeline_data.search_terms,
+                results_per_query=self.results_per_query
             )
 
-        # Sort by priority (academic sources first)
-        all_content.sort(key=lambda x: x["priority"])
+            search_results = await self.google_client.search_multiple_terms(
+                queries=pipeline_data.search_terms,
+                results_per_query=self.results_per_query
+            )
 
-        # Combine and clean content
-        combined_text = "\n\n".join(
-            f"Source: {item['url']}\n{item['content']}"
-            for item in all_content[:5]  # Top 5 sources
+            if not search_results:
+                logfire.warning("No search results found")
+                pipeline_data.scraped_content = "No search results found."
+                pipeline_data.scraped_page_contents = {}
+                pipeline_data.scraped_urls = []
+                pipeline_data.scraping_metadata = {
+                    "total_attempts": 0,
+                    "successful_scrapes": 0,
+                    "failed_urls": []
+                }
+
+                return StepResult(
+                    success=True,
+                    step_name=self.step_name,
+                    warnings=["No search results found for any query"],
+                    metadata={"search_results_count": 0}
+                )
+
+            # Extract URLs from search results
+            urls_to_scrape = [
+                result.get('link', '')
+                for result in search_results
+                if result.get('link')
+            ][:self.max_pages_to_scrape]
+
+            logfire.info("URLs to scrape", total_urls=len(urls_to_scrape))
+
+            # Step 2: Scrape URLs concurrently with Playwright
+            scraped_pages = await self._scrape_urls_concurrent(urls_to_scrape)
+
+            # Step 3: Build scraping result
+            scraping_result = ScrapingResult(
+                pages_scraped=scraped_pages,
+                failed_urls=[
+                    url for url in urls_to_scrape
+                    if url not in [page.url for page in scraped_pages]
+                ],
+                total_attempts=len(urls_to_scrape),
+                total_content_length=sum(len(page.content) for page in scraped_pages)
+            )
+
+            logfire.info(
+                "Scraping completed",
+                successful=len(scraped_pages),
+                failed=len(scraping_result.failed_urls),
+                success_rate=scraping_result.success_rate,
+                total_content_length=scraping_result.total_content_length
+            )
+
+            if not scraped_pages:
+                pipeline_data.scraped_content = "Failed to scrape any content."
+                pipeline_data.scraped_page_contents = {}
+                pipeline_data.scraped_urls = []
+                pipeline_data.scraping_metadata = scraping_result.model_dump()
+
+                return StepResult(
+                    success=True,
+                    step_name=self.step_name,
+                    warnings=["Failed to scrape any URLs"],
+                    metadata={"scraped_pages": 0}
+                )
+
+            # Step 4: Combine and summarize content
+            combined_content = self._combine_scraped_content(scraped_pages)
+
+            # ALWAYS summarize with LLM for:
+            # 1. Anti-hallucination fact checking
+            # 2. Content filtering (removes boilerplate, duplicates)
+            # 3. Context optimization for email generation
+            # 4. Structured output format
+            logfire.info(
+                "Summarizing content with LLM for fact verification",
+                original_length=len(combined_content),
+                num_pages=len(scraped_pages)
+            )
+
+            # Two-tier summarization (handles large content)
+            final_content = await self._summarize_content(
+                content=combined_content,
+                recipient_name=pipeline_data.recipient_name,
+                recipient_interest=pipeline_data.recipient_interest,
+                template_type=pipeline_data.template_type
+            )
+
+            # Check for uncertainty markers in the summary
+            has_uncertainty = "[UNCERTAIN]" in final_content or "[SINGLE SOURCE]" in final_content
+            if has_uncertainty:
+                logfire.warning(
+                    "Summary contains uncertainty markers",
+                    has_uncertain=("[UNCERTAIN]" in final_content),
+                    has_single_source=("[SINGLE SOURCE]" in final_content)
+                )
+
+            # Step 5: Update PipelineData
+            pipeline_data.scraped_content = final_content
+            pipeline_data.scraped_urls = [page.url for page in scraped_pages]
+            pipeline_data.scraped_page_contents = {page.url: page.content for page in scraped_pages}
+            pipeline_data.scraping_metadata = {
+                "total_attempts": scraping_result.total_attempts,
+                "successful_scrapes": len(scraped_pages),
+                "failed_urls": scraping_result.failed_urls,
+                "success_rate": scraping_result.success_rate,
+                "total_content_length": scraping_result.total_content_length,
+                "final_content_length": len(final_content),
+                "was_summarized": True,
+                "has_uncertainty_markers": has_uncertainty
+            }
+
+            # Return success
+            return StepResult(
+                success=True,
+                step_name=self.step_name,
+                metadata={
+                    "pages_scraped": len(scraped_pages),
+                    "urls_scraped": pipeline_data.scraped_urls,
+                    "content_length": len(final_content)
+                },
+                warnings=[
+                    f"{len(scraping_result.failed_urls)} URLs failed to scrape"
+                ] if scraping_result.failed_urls else []
+            )
+
+        except ExternalAPIError:
+            raise
+        except Exception as e:
+            logfire.error(
+                "Unexpected error in web scraper",
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            raise
+
+    async def _scrape_urls_concurrent(self, urls: List[str]) -> List[ScrapedPage]:
+        """
+        Scrape multiple URLs concurrently with semaphore using Playwright.
+
+        Creates a persistent browser for all scrapes, with isolated browser
+        contexts per URL to prevent cross-contamination.
+
+        Args:
+            urls: List of URLs to scrape
+
+        Returns:
+            List of successfully scraped pages
+        """
+        from playwright.async_api import async_playwright
+        import time
+
+        # Launch persistent browser for all scrapes
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox']  # Required for containers/serverless
+            )
+
+            try:
+                # Create semaphore for concurrency control
+                semaphore = asyncio.Semaphore(self.max_concurrent_scrapes)
+
+                async def scrape_with_semaphore(url: str) -> Optional[ScrapedPage]:
+                    async with semaphore:
+                        start = time.time()
+
+                        # Pass browser to scrape_url (creates new context per URL)
+                        title, content = await scrape_url(
+                            url,
+                            browser,
+                            timeout=self.scrape_timeout
+                        )
+
+                        if content:
+                            return ScrapedPage(
+                                url=url,
+                                title=title,
+                                content=content,
+                                word_count=len(content.split()),
+                                scrape_time_seconds=time.time() - start
+                            )
+                        return None
+
+                # Scrape all URLs concurrently
+                tasks = [scrape_with_semaphore(url) for url in urls]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Filter successful results
+                scraped_pages = [
+                    result for result in results
+                    if isinstance(result, ScrapedPage)
+                ]
+
+                return scraped_pages
+
+            finally:
+                # Always close browser
+                await browser.close()
+
+    def _combine_scraped_content(self, pages: List[ScrapedPage]) -> str:
+        """
+        Combine content from multiple pages with clear page markers.
+
+        Each page is wrapped with delimiters for batch processing:
+        - Start marker: === PAGE {index}: {url} ===
+        - End marker: === END PAGE {index} ===
+
+        This allows batch summarization to maintain source attribution.
+
+        Args:
+            pages: List of scraped pages
+
+        Returns:
+            Combined content string with page markers
+        """
+        combined = ""
+
+        for idx, page in enumerate(pages, start=1):
+            # Start marker
+            combined += f"{'=' * 80}\n"
+            combined += f"=== PAGE {idx}: {page.url} ===\n"
+            combined += f"{'=' * 80}\n\n"
+
+            # Page title (if exists)
+            if page.title:
+                combined += f"Title: {page.title}\n\n"
+
+            # Page content
+            combined += f"{page.content}\n\n"
+
+            # End marker
+            combined += f"{'=' * 80}\n"
+            combined += f"=== END PAGE {idx} ===\n"
+            combined += f"{'=' * 80}\n\n\n"
+
+        return combined
+
+    async def _summarize_content(
+        self,
+        content: str,
+        recipient_name: str,
+        recipient_interest: str,
+        template_type: 'TemplateType'
+    ) -> str:
+        """
+        Two-tier summarization with batch processing and final synthesis.
+
+        Architecture:
+        - If content ≤30K chars: Direct summarization with Haiku
+        - If content >30K chars:
+            1. Split into 30K-char chunks (sentence-aware)
+            2. Summarize each batch with Haiku (extraction focus)
+            3. Combine batch summaries with markers
+            4. Final synthesis with Sonnet + COT reasoning
+
+        Args:
+            content: Combined scraped content (all pages)
+            recipient_name: Professor name
+            recipient_interest: Research area
+            template_type: Template type (RESEARCH, BOOK, GENERAL)
+
+        Returns:
+            Final synthesized summary (max 3000 chars)
+        """
+        from .prompts import (
+            FINAL_SUMMARY_SYSTEM_PROMPT,
+            create_final_summary_prompt,
+            create_summarization_prompt
         )
 
-        cleaned_content = clean_text(combined_text, max_length=5000)
+        # Direct summarization for small content (≤30K chars)
+        if len(content) <= 30000:
+            logfire.info(
+                "Content fits in single batch, using direct summarization",
+                content_length=len(content)
+            )
 
-        # Update pipeline data
-        pipeline_data.scraped_content = cleaned_content
-        pipeline_data.scraped_urls = [item["url"] for item in all_content[:5]]
-        pipeline_data.scraping_metadata = {
-            "total_urls_tried": total_urls_tried,
-            "successful_scrapes": successful_scrapes,
-            "failed_urls": failed_urls[:10],  # Keep first 10 failures
-            "content_length": len(cleaned_content)
-        }
+            user_prompt = create_summarization_prompt(
+                scraped_content=content,
+                recipient_name=recipient_name,
+                recipient_interest=recipient_interest,
+                template_type=template_type
+            )
+
+            with logfire.span(
+                "Direct Summarization",
+                content_length=len(content),
+                template_type=template_type.value
+            ):
+                try:
+                    result = await self.summarization_agent.run(user_prompt)
+                    summary = result.output
+
+                    logfire.info(
+                        "Direct summarization completed",
+                        original_length=len(content),
+                        summary_length=len(summary)
+                    )
+
+                    return summary[:3000]
+
+                except Exception as e:
+                    logfire.error("Direct summarization failed", error=str(e))
+                    return content[:3000]
+
+        # Batch processing for large content (>30K chars)
+        chunks = self._split_into_chunks(content, chunk_size=30000)
+        total_batches = len(chunks)
 
         logfire.info(
-            "Web scraping completed",
-            successful_scrapes=successful_scrapes,
-            total_urls_tried=total_urls_tried,
-            final_content_length=len(cleaned_content)
+            "Starting batch summarization",
+            total_content_length=len(content),
+            num_batches=total_batches,
+            avg_batch_size=len(content) // total_batches
         )
 
-        # Return success
-        return StepResult(
-            success=True,
-            step_name=self.step_name,
-            metadata={
-                "urls_scraped": successful_scrapes,
-                "content_length": len(cleaned_content)
-            },
-            warnings=[f"{len(failed_urls)} URLs failed to scrape"] if failed_urls else []
+        # Step 1: Batch Summarizations with Haiku (extraction)
+        batch_summaries = []
+
+        with logfire.span(
+            "Batch Summarizations",
+            total_batches=total_batches,
+            content_length=len(content)
+        ):
+            for idx, chunk in enumerate(chunks, start=1):
+                batch_summary = await self._summarize_batch(
+                    batch_content=chunk,
+                    batch_number=idx,
+                    total_batches=total_batches,
+                    recipient_name=recipient_name
+                )
+                batch_summaries.append(batch_summary)
+
+        # Step 2: Combine batch summaries with markers
+        tiered_summarizations = ""
+        for idx, summary in enumerate(batch_summaries, start=1):
+            tiered_summarizations += f"{'=' * 80}\n"
+            tiered_summarizations += f"=== BATCH {idx} SUMMARY ===\n"
+            tiered_summarizations += f"{'=' * 80}\n\n"
+            tiered_summarizations += f"{summary}\n\n"
+            tiered_summarizations += f"{'=' * 80}\n"
+            tiered_summarizations += f"=== END BATCH {idx} ===\n"
+            tiered_summarizations += f"{'=' * 80}\n\n\n"
+
+        logfire.info(
+            "Batch summaries combined",
+            num_batches=len(batch_summaries),
+            combined_length=len(tiered_summarizations)
         )
+
+        # Step 3: Final Synthesis with Sonnet + COT
+        with logfire.span(
+            "Final Summary Agent",
+            num_batches=len(batch_summaries),
+            template_type=template_type.value
+        ):
+            # Create final summary agent (using Sonnet for higher quality)
+            final_agent = create_agent(
+                model="anthropic:claude-sonnet-4-5-20250929",
+                system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
+                temperature=0.2,  # Slight creativity for synthesis while staying factual
+                max_tokens=2500,  # ~3000 chars
+                retries=2
+            )
+
+            final_prompt = create_final_summary_prompt(
+                batch_summaries=tiered_summarizations,
+                recipient_name=recipient_name,
+                recipient_interest=recipient_interest,
+                template_type=template_type
+            )
+
+            try:
+                result = await final_agent.run(final_prompt)
+                final_summary = result.output
+
+                logfire.info(
+                    "Final summary completed",
+                    batches_processed=len(batch_summaries),
+                    final_length=len(final_summary)
+                )
+
+                return final_summary[:3000]
+
+            except Exception as e:
+                logfire.error("Final summary generation failed", error=str(e))
+                # Fallback: use first batch summary (better than nothing)
+                logfire.warning("Using first batch summary as fallback")
+                return batch_summaries[0][:3000] if batch_summaries else content[:3000]
+
+    def _split_into_chunks(self, content: str, chunk_size: int = 30000) -> List[str]:
+        """
+        Split content into chunks without breaking mid-sentence.
+
+        Smart chunking algorithm:
+        1. Try to split at chunk_size
+        2. Look backward up to 500 chars for sentence boundary (., !, ?, or \n\n)
+        3. If no boundary found, split at word boundary
+        4. If still no boundary, hard split at chunk_size
+
+        Args:
+            content: Full combined text
+            chunk_size: Target chunk size in characters (default 30000)
+
+        Returns:
+            List of content chunks, each ≤ chunk_size characters
+        """
+        if len(content) <= chunk_size:
+            return [content]
+
+        chunks = []
+        position = 0
+        content_length = len(content)
+
+        while position < content_length:
+            # Determine end of this chunk
+            end_position = min(position + chunk_size, content_length)
+
+            # If this is the last chunk, take everything
+            if end_position >= content_length:
+                chunks.append(content[position:])
+                break
+
+            # Look backward for sentence boundary (up to 500 chars)
+            search_start = max(position, end_position - 500)
+            chunk_text = content[search_start:end_position]
+
+            # Try to find sentence boundaries (in order of preference)
+            sentence_endings = ['\n\n', '. ', '.\n', '! ', '!\n', '? ', '?\n']
+            best_split = -1
+
+            for ending in sentence_endings:
+                idx = chunk_text.rfind(ending)
+                if idx != -1:
+                    # Convert local index to global index
+                    best_split = search_start + idx + len(ending)
+                    break
+
+            # If no sentence boundary, try word boundary
+            if best_split == -1:
+                last_space = chunk_text.rfind(' ')
+                if last_space != -1:
+                    best_split = search_start + last_space + 1
+
+            # If still no boundary, hard split at chunk_size
+            if best_split == -1:
+                best_split = end_position
+
+            # Extract chunk and update position
+            chunks.append(content[position:best_split].strip())
+            position = best_split
+
+        return chunks
+
+    async def _summarize_batch(
+        self,
+        batch_content: str,
+        batch_number: int,
+        total_batches: int,
+        recipient_name: str
+    ) -> str:
+        """
+        Summarize a single content batch using Haiku.
+
+        This is an intermediate extraction step - focuses on completeness
+        over conciseness. The final summary will filter and synthesize.
+
+        Args:
+            batch_content: Content chunk to summarize
+            batch_number: Current batch index (1-based)
+            total_batches: Total number of batches
+            recipient_name: Professor name
+
+        Returns:
+            Batch summary (max 4000 chars)
+        """
+        from .prompts import BATCH_SUMMARIZATION_SYSTEM_PROMPT, create_batch_summarization_prompt
+
+        # Create batch-specific agent (ephemeral)
+        batch_agent = create_agent(
+            model="anthropic:claude-haiku-4-5",
+            system_prompt=BATCH_SUMMARIZATION_SYSTEM_PROMPT,
+            temperature=0.0,  # Deterministic extraction
+            max_tokens=3000,  # ~4000 chars
+            retries=2
+        )
+
+        user_prompt = create_batch_summarization_prompt(
+            batch_content=batch_content,
+            batch_number=batch_number,
+            total_batches=total_batches,
+            recipient_name=recipient_name
+        )
+
+        try:
+            result = await batch_agent.run(user_prompt)
+            summary = result.output
+
+            logfire.info(
+                "Batch summarized",
+                batch_number=batch_number,
+                total_batches=total_batches,
+                input_length=len(batch_content),
+                output_length=len(summary)
+            )
+
+            return summary[:4000]  # Enforce limit
+
+        except Exception as e:
+            logfire.error(
+                "Batch summarization failed",
+                batch_number=batch_number,
+                error=str(e)
+            )
+            # Fallback: truncate raw content
+            logfire.warning(
+                "Using truncated raw content for batch",
+                batch_number=batch_number
+            )
+            return batch_content[:4000]
 ```
 
 ---
@@ -2208,326 +3036,512 @@ class WebScraperStep(BasePipelineStep):
 
 **Purpose:** Fetch academic papers from ArXiv (conditional on template_type).
 
-#### File: `pipeline/steps/arxiv_enricher/models.py`
+#### File: `pipeline/steps/arxiv_helper/models.py`
 
 ```python
 """
-Pydantic models for ArXiv data.
+ArXiv Helper Step Models
+
+Pydantic models for academic paper data.
 """
 
-from pydantic import BaseModel, Field, HttpUrl
-from typing import List, Optional
+from typing import List
+from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class ArxivPaper(BaseModel):
-    """
-    Represents a single paper from ArXiv.
-    """
+    """Single academic paper from ArXiv."""
 
-    title: str = Field(..., description="Paper title")
+    title: str = Field(description="Paper title")
 
-    abstract: str = Field(..., description="Paper abstract")
-
-    authors: List[str] = Field(
-        default_factory=list,
-        description="List of author names"
+    abstract: str = Field(
+        description="Paper abstract",
+        max_length=5000
     )
 
-    year: int = Field(..., description="Publication year")
+    authors: List[str] = Field(
+        description="List of author names",
+        min_length=1
+    )
 
-    url: str = Field(..., description="ArXiv URL")
+    published_date: datetime = Field(
+        description="Publication date"
+    )
 
-    arxiv_id: str = Field(..., description="ArXiv identifier")
+    arxiv_id: str = Field(
+        description="ArXiv paper ID (e.g., '2301.12345')"
+    )
 
-    relevance_score: Optional[float] = Field(
-        None,
-        description="Relevance score (0-1) based on recipient name match"
+    arxiv_url: str = Field(
+        description="ArXiv paper URL"
+    )
+
+    pdf_url: str = Field(
+        description="Direct PDF link"
+    )
+
+    primary_category: str = Field(
+        description="Primary ArXiv category (e.g., 'cs.AI')"
+    )
+
+    relevance_score: float = Field(
+        description="Relevance score (0-1, higher is more relevant)",
+        ge=0.0,
+        le=1.0,
+        default=0.0
+    )
+
+    @property
+    def year(self) -> int:
+        """Extract year from published_date"""
+        return self.published_date.year
+
+    @property
+    def primary_author(self) -> str:
+        """Get first author"""
+        return self.authors[0] if self.authors else "Unknown"
+
+    def to_dict(self) -> dict:
+        """Convert to dict for PipelineData.arxiv_papers"""
+        return {
+            "title": self.title,
+            "abstract": self.abstract[:500],  # Truncate for brevity
+            "authors": self.authors,
+            "year": self.year,
+            "url": self.arxiv_url,
+            "relevance_score": self.relevance_score
+        }
+
+
+class ArxivSearchResult(BaseModel):
+    """Complete result from ArXiv search."""
+
+    papers_found: List[ArxivPaper] = Field(
+        description="All papers found",
+        default_factory=list
+    )
+
+    papers_filtered: List[ArxivPaper] = Field(
+        description="Papers after relevance filtering (top 5)",
+        default_factory=list
+    )
+
+    search_query: str = Field(
+        description="Query used for ArXiv search"
+    )
+
+    total_results: int = Field(
+        description="Total results from ArXiv API",
+        ge=0
     )
 ```
 
-#### File: `pipeline/steps/arxiv_enricher/main.py`
+#### File: `pipeline/steps/arxiv_helper/utils.py`
 
 ```python
 """
-ArxivEnricher step implementation.
+ArXiv Helper Utilities
 
-Fetches academic papers from ArXiv API (only for template_type=RESEARCH).
+ArXiv API utilities and relevance scoring.
 """
 
-import httpx
+import arxiv
 import logfire
-from typing import Optional, List
-import xml.etree.ElementTree as ET
+from typing import List
 from datetime import datetime
+
+from .models import ArxivPaper
+
+
+def search_arxiv(
+    author_name: str,
+    max_results: int = 20,
+    sort_by: arxiv.SortCriterion = arxiv.SortCriterion.Relevance
+) -> List[ArxivPaper]:
+    """
+    Search ArXiv for papers by author.
+
+    Args:
+        author_name: Author name to search
+        max_results: Maximum papers to fetch
+        sort_by: Sort criterion
+
+    Returns:
+        List of ArxivPaper objects
+
+    Note:
+        arxiv library doesn't support async, but we wrap it
+        for consistency with other steps.
+    """
+    # Build search query
+    # Format: au:"Last Name, First Name" for better results
+    query = f'au:"{author_name}"'
+
+    logfire.info(
+        "Searching ArXiv",
+        query=query,
+        max_results=max_results
+    )
+
+    try:
+        # Create search client
+        search = arxiv.Search(
+            query=query,
+            max_results=max_results,
+            sort_by=sort_by
+        )
+
+        papers = []
+
+        # Fetch results (synchronous)
+        for result in search.results():
+            paper = ArxivPaper(
+                title=result.title,
+                abstract=result.summary,
+                authors=[author.name for author in result.authors],
+                published_date=result.published,
+                arxiv_id=result.entry_id.split('/')[-1],  # Extract ID
+                arxiv_url=result.entry_id,
+                pdf_url=result.pdf_url,
+                primary_category=result.primary_category
+            )
+
+            papers.append(paper)
+
+        logfire.info(
+            "ArXiv search completed",
+            papers_found=len(papers)
+        )
+
+        return papers
+
+    except Exception as e:
+        logfire.error(
+            "ArXiv search failed",
+            error=str(e),
+            query=query
+        )
+        return []
+
+
+def calculate_relevance_score(
+    paper: ArxivPaper,
+    recipient_name: str,
+    recipient_interest: str
+) -> float:
+    """
+    Calculate relevance score for a paper.
+
+    Scoring factors:
+    - Author match (0.4): Is recipient an author?
+    - Topic match (0.3): Does abstract mention interest?
+    - Recency (0.2): More recent papers score higher
+    - Primary author (0.1): Bonus if recipient is first author
+
+    Args:
+        paper: ArxivPaper to score
+        recipient_name: Expected author name
+        recipient_interest: Research interest/topic
+
+    Returns:
+        Relevance score (0-1)
+    """
+    score = 0.0
+
+    # Extract last name for matching
+    recipient_last_name = recipient_name.split()[-1].lower()
+
+    # Factor 1: Author match (0.4 weight)
+    author_match = any(
+        recipient_last_name in author.lower()
+        for author in paper.authors
+    )
+
+    if author_match:
+        score += 0.4
+
+    # Factor 2: Topic match in abstract (0.3 weight)
+    interest_keywords = recipient_interest.lower().split()
+    abstract_lower = paper.abstract.lower()
+
+    keyword_matches = sum(
+        1 for keyword in interest_keywords
+        if keyword in abstract_lower
+    )
+
+    # Normalize by number of keywords
+    topic_score = min(keyword_matches / len(interest_keywords), 1.0) * 0.3
+    score += topic_score
+
+    # Factor 3: Recency (0.2 weight)
+    # Papers from last 5 years get full score, older papers decay
+    current_year = datetime.now().year
+    years_old = current_year - paper.year
+
+    if years_old <= 5:
+        recency_score = 0.2
+    elif years_old <= 10:
+        recency_score = 0.1
+    else:
+        recency_score = 0.0
+
+    score += recency_score
+
+    # Factor 4: Primary author bonus (0.1 weight)
+    if paper.authors and recipient_last_name in paper.authors[0].lower():
+        score += 0.1
+
+    return min(score, 1.0)  # Cap at 1.0
+
+
+def filter_top_papers(
+    papers: List[ArxivPaper],
+    recipient_name: str,
+    recipient_interest: str,
+    top_n: int = 5
+) -> List[ArxivPaper]:
+    """
+    Score and filter papers to top N most relevant.
+
+    Args:
+        papers: List of papers to filter
+        recipient_name: Recipient name
+        recipient_interest: Research interest
+        top_n: Number of top papers to return
+
+    Returns:
+        Sorted list of top N papers
+    """
+    # Score all papers
+    for paper in papers:
+        paper.relevance_score = calculate_relevance_score(
+            paper=paper,
+            recipient_name=recipient_name,
+            recipient_interest=recipient_interest
+        )
+
+    # Sort by relevance (descending)
+    sorted_papers = sorted(
+        papers,
+        key=lambda p: p.relevance_score,
+        reverse=True
+    )
+
+    # Return top N
+    top_papers = sorted_papers[:top_n]
+
+    logfire.info(
+        "Papers filtered",
+        total_papers=len(papers),
+        top_papers=len(top_papers),
+        avg_relevance=sum(p.relevance_score for p in top_papers) / len(top_papers) if top_papers else 0.0
+    )
+
+    return top_papers
+```
+
+#### File: `pipeline/steps/arxiv_helper/main.py`
+
+```python
+"""
+ArXiv Helper Step - Phase 5 Step 3
+
+Conditionally fetches academic papers from ArXiv API:
+- Only runs if template_type == RESEARCH
+- Searches for papers by recipient
+- Scores and filters to top 5 most relevant
+- Updates PipelineData with results
+"""
+
+import logfire
+from typing import Optional
 
 from pipeline.core.runner import BasePipelineStep
 from pipeline.models.core import PipelineData, StepResult, TemplateType
-from pipeline.core.exceptions import ExternalAPIError
-from pipeline.steps.arxiv_enricher.models import ArxivPaper
+
+from .models import ArxivSearchResult
+from .utils import search_arxiv, filter_top_papers
 
 
-class ArxivEnricherStep(BasePipelineStep):
+class ArxivHelperStep(BasePipelineStep):
     """
-    Step 3: Fetch academic papers from ArXiv.
+    Step 3: Fetch academic papers from ArXiv (conditional).
 
-    Only executes if template_type == RESEARCH.
-    Otherwise, returns success with no papers.
+    Responsibilities:
+    - Check if template_type == RESEARCH
+    - Search ArXiv for papers by recipient
+    - Score papers by relevance
+    - Filter to top 5 papers
+    - Update PipelineData
+
+    Updates PipelineData fields:
+    - arxiv_papers: List[Dict[str, Any]]
+    - enrichment_metadata: Dict[str, Any]
     """
 
     def __init__(self):
-        super().__init__("arxiv_enricher")
+        """Initialize ArXiv helper step."""
+        super().__init__(step_name="arxiv_helper")
+
+        # Configuration
+        self.max_papers_to_fetch = 20
+        self.top_n_papers = 5
+
+    async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
+        """
+        Validate prerequisites.
+
+        Required:
+        - template_type: Must be set (from Step 1)
+        - recipient_name: Required for author search
+        - recipient_interest: Required for relevance scoring
+        """
+        if not pipeline_data.template_type:
+            return "template_type not set (Step 1 must run first)"
+
+        if not pipeline_data.recipient_name:
+            return "recipient_name is missing"
+
+        if not pipeline_data.recipient_interest:
+            return "recipient_interest is missing"
+
+        return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
         """
-        Execute ArXiv enrichment (conditional).
+        Execute ArXiv paper fetching.
 
-        Updates pipeline_data.arxiv_papers
-
-        Args:
-            pipeline_data: Shared data object
-
-        Returns:
-            StepResult with paper count
+        Steps:
+        1. Check if template_type == RESEARCH (skip if not)
+        2. Search ArXiv for papers by recipient
+        3. Score papers by relevance
+        4. Filter to top 5
+        5. Update PipelineData
         """
-        # Check if this step should run
-        if pipeline_data.template_type != TemplateType.RESEARCH:
-            logfire.info(
-                "Skipping ArXiv enrichment",
-                template_type=pipeline_data.template_type.value,
-                reason="Only runs for template_type=RESEARCH"
-            )
-
-            return StepResult(
-                success=True,
-                step_name=self.step_name,
-                metadata={"papers_found": 0, "skipped": True}
-            )
-
-        # Extract author name for search
-        author_name = self._extract_author_name(pipeline_data.recipient_name)
-
-        logfire.info("Searching ArXiv", author=author_name)
-
         try:
-            # Search ArXiv API
-            papers = await self._search_arxiv(
-                author_name=author_name,
-                max_results=10
+            # Step 1: Check template type
+            if pipeline_data.template_type != TemplateType.RESEARCH:
+                logfire.info(
+                    "Skipping ArXiv search - not RESEARCH template",
+                    template_type=pipeline_data.template_type.value
+                )
+
+                # Set empty results
+                pipeline_data.arxiv_papers = []
+                pipeline_data.enrichment_metadata = {
+                    "skipped": True,
+                    "reason": f"template_type is {pipeline_data.template_type.value}, not RESEARCH"
+                }
+
+                return StepResult(
+                    success=True,
+                    step_name=self.step_name,
+                    metadata={
+                        "skipped": True,
+                        "template_type": pipeline_data.template_type.value
+                    }
+                )
+
+            # Step 2: Search ArXiv
+            logfire.info(
+                "Searching ArXiv for papers",
+                recipient_name=pipeline_data.recipient_name,
+                max_results=self.max_papers_to_fetch
             )
 
-            # Filter and score papers
-            relevant_papers = self._filter_papers(
+            papers = search_arxiv(
+                author_name=pipeline_data.recipient_name,
+                max_results=self.max_papers_to_fetch
+            )
+
+            if not papers:
+                logfire.warning(
+                    "No papers found on ArXiv",
+                    recipient_name=pipeline_data.recipient_name
+                )
+
+                pipeline_data.arxiv_papers = []
+                pipeline_data.enrichment_metadata = {
+                    "papers_found": 0,
+                    "papers_filtered": 0,
+                    "search_query": pipeline_data.recipient_name
+                }
+
+                return StepResult(
+                    success=True,
+                    step_name=self.step_name,
+                    warnings=["No papers found on ArXiv"],
+                    metadata={"papers_found": 0}
+                )
+
+            # Step 3: Score and filter papers
+            top_papers = filter_top_papers(
                 papers=papers,
                 recipient_name=pipeline_data.recipient_name,
-                interest=pipeline_data.recipient_interest
+                recipient_interest=pipeline_data.recipient_interest,
+                top_n=self.top_n_papers
             )
 
-            # Keep top 5 most relevant
-            top_papers = sorted(
-                relevant_papers,
-                key=lambda p: p.relevance_score or 0,
-                reverse=True
-            )[:5]
+            logfire.info(
+                "ArXiv papers filtered",
+                total_papers=len(papers),
+                top_papers=len(top_papers),
+                relevance_scores=[p.relevance_score for p in top_papers]
+            )
 
-            # Update pipeline data
+            # Step 4: Build result
+            result = ArxivSearchResult(
+                papers_found=papers,
+                papers_filtered=top_papers,
+                search_query=pipeline_data.recipient_name,
+                total_results=len(papers)
+            )
+
+            # Step 5: Update PipelineData
             pipeline_data.arxiv_papers = [
-                {
-                    "title": paper.title,
-                    "abstract": paper.abstract,
-                    "authors": paper.authors,
-                    "year": paper.year,
-                    "url": paper.url,
-                    "arxiv_id": paper.arxiv_id,
-                    "relevance_score": paper.relevance_score
-                }
-                for paper in top_papers
+                paper.to_dict() for paper in top_papers
             ]
 
             pipeline_data.enrichment_metadata = {
                 "papers_found": len(papers),
-                "papers_filtered": len(relevant_papers),
-                "papers_kept": len(top_papers)
+                "papers_filtered": len(top_papers),
+                "search_query": result.search_query,
+                "avg_relevance_score": sum(p.relevance_score for p in top_papers) / len(top_papers) if top_papers else 0.0,
+                "skipped": False
             }
 
-            logfire.info(
-                "ArXiv enrichment completed",
-                papers_found=len(papers),
-                papers_kept=len(top_papers)
+            # Return success
+            return StepResult(
+                success=True,
+                step_name=self.step_name,
+                metadata={
+                    "papers_found": len(papers),
+                    "papers_filtered": len(top_papers),
+                    "top_paper_titles": [p.title for p in top_papers[:3]]
+                }
             )
+
+        except Exception as e:
+            logfire.error(
+                "Error in ArXiv helper",
+                error=str(e),
+                error_type=type(e).__name__
+            )
+
+            # ArXiv errors are not fatal - continue pipeline with empty results
+            pipeline_data.arxiv_papers = []
+            pipeline_data.enrichment_metadata = {
+                "error": str(e),
+                "papers_found": 0
+            }
 
             return StepResult(
                 success=True,
                 step_name=self.step_name,
-                metadata={"papers_found": len(top_papers)},
-                warnings=[
-                    "No papers found on ArXiv"
-                ] if len(top_papers) == 0 else []
+                warnings=[f"ArXiv search failed: {str(e)}"],
+                metadata={"error": str(e)}
             )
-
-        except Exception as e:
-            # Non-fatal error - continue without papers
-            logfire.warning("ArXiv search failed", error=str(e))
-
-            pipeline_data.arxiv_papers = []
-
-            return StepResult(
-                success=True,  # Don't fail pipeline
-                step_name=self.step_name,
-                metadata={"papers_found": 0},
-                warnings=[f"ArXiv API error: {str(e)}"]
-            )
-
-    def _extract_author_name(self, full_name: str) -> str:
-        """
-        Extract last name for ArXiv search.
-
-        Args:
-            full_name: Full name (e.g., "Dr. Jane Smith")
-
-        Returns:
-            Last name (e.g., "Smith")
-        """
-        # Remove titles
-        name = full_name.replace("Dr.", "").replace("Prof.", "").strip()
-
-        # Split and get last part
-        parts = name.split()
-        return parts[-1] if parts else name
-
-    async def _search_arxiv(
-        self,
-        author_name: str,
-        max_results: int = 10
-    ) -> List[ArxivPaper]:
-        """
-        Search ArXiv API.
-
-        Args:
-            author_name: Author last name
-            max_results: Maximum number of results
-
-        Returns:
-            List of ArxivPaper objects
-
-        Raises:
-            ExternalAPIError: If API call fails
-        """
-        url = "http://export.arxiv.org/api/query"
-
-        params = {
-            "search_query": f"au:{author_name}",
-            "start": 0,
-            "max_results": max_results,
-            "sortBy": "submittedDate",
-            "sortOrder": "descending"
-        }
-
-        with logfire.span("arxiv_api_search", author=author_name):
-            try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    response = await client.get(url, params=params)
-                    response.raise_for_status()
-
-                # Parse XML response
-                root = ET.fromstring(response.content)
-                namespace = {"atom": "http://www.w3.org/2005/Atom"}
-
-                papers = []
-                for entry in root.findall("atom:entry", namespace):
-                    try:
-                        paper = self._parse_arxiv_entry(entry, namespace)
-                        papers.append(paper)
-                    except Exception as e:
-                        logfire.warning("Failed to parse ArXiv entry", error=str(e))
-                        continue
-
-                return papers
-
-            except httpx.HTTPError as e:
-                raise ExternalAPIError(f"ArXiv API failed: {e}")
-
-    def _parse_arxiv_entry(
-        self,
-        entry: ET.Element,
-        namespace: dict
-    ) -> ArxivPaper:
-        """Parse a single ArXiv XML entry"""
-
-        title = entry.find("atom:title", namespace).text.strip()
-        abstract = entry.find("atom:summary", namespace).text.strip()
-
-        authors = [
-            author.find("atom:name", namespace).text
-            for author in entry.findall("atom:author", namespace)
-        ]
-
-        # Extract year from published date
-        published = entry.find("atom:published", namespace).text
-        year = int(published[:4])
-
-        # Get ArXiv ID and URL
-        arxiv_id = entry.find("atom:id", namespace).text.split("/abs/")[-1]
-        url = f"https://arxiv.org/abs/{arxiv_id}"
-
-        return ArxivPaper(
-            title=title,
-            abstract=abstract,
-            authors=authors,
-            year=year,
-            url=url,
-            arxiv_id=arxiv_id
-        )
-
-    def _filter_papers(
-        self,
-        papers: List[ArxivPaper],
-        recipient_name: str,
-        interest: str
-    ) -> List[ArxivPaper]:
-        """
-        Filter and score papers by relevance.
-
-        Args:
-            papers: List of papers from ArXiv
-            recipient_name: Recipient's full name
-            interest: Research interest
-
-        Returns:
-            Filtered list with relevance scores
-        """
-        last_name = self._extract_author_name(recipient_name).lower()
-        interest_lower = interest.lower()
-
-        relevant_papers = []
-
-        for paper in papers:
-            # Check if recipient is author (case-insensitive)
-            is_author = any(
-                last_name in author.lower()
-                for author in paper.authors
-            )
-
-            if not is_author:
-                continue
-
-            # Calculate relevance score
-            score = 0.5  # Base score for being an author
-
-            # Boost if interest mentioned in title/abstract
-            if interest_lower in paper.title.lower():
-                score += 0.3
-            if interest_lower in paper.abstract.lower():
-                score += 0.2
-
-            # Boost for recent papers
-            current_year = datetime.now().year
-            if current_year - paper.year <= 2:
-                score += 0.1
-
-            paper.relevance_score = min(score, 1.0)
-            relevant_papers.append(paper)
-
-        return relevant_papers
 ```
 
 ---
@@ -2542,526 +3556,525 @@ This is the ONLY step that writes to the database.
 
 ```python
 """
-Pydantic models for EmailComposer step.
+Email Composer Step Models
+
+Pydantic models for email generation and validation.
 """
 
-from pydantic import BaseModel, Field, validator
-from typing import List, Optional
+from typing import List
+from pydantic import BaseModel, Field, field_validator
 
 
-class EmailValidation(BaseModel):
-    """
-    Validation result for composed email.
+class EmailValidationResult(BaseModel):
+    """Result of email quality validation."""
 
-    Used to ensure email quality before saving to database.
-    """
-
-    is_valid: bool = Field(..., description="Whether email passes validation")
+    is_valid: bool = Field(
+        description="True if email passes all validation checks"
+    )
 
     issues: List[str] = Field(
-        default_factory=list,
-        description="List of validation issues found"
+        description="List of validation issues found",
+        default_factory=list
     )
 
     warnings: List[str] = Field(
-        default_factory=list,
-        description="Non-fatal warnings"
+        description="Non-fatal warnings",
+        default_factory=list
     )
 
-    has_publication_mention: bool = Field(
-        default=False,
-        description="Whether email mentions at least one publication"
+    mentions_publications: bool = Field(
+        description="True if email mentions specific publications",
+        default=False
     )
 
     has_placeholders: bool = Field(
-        default=False,
-        description="Whether unfilled placeholders remain ({{...}})"
+        description="True if unfilled placeholders remain",
+        default=False
     )
 
-    length: int = Field(..., description="Email length in characters")
+    word_count: int = Field(
+        description="Word count of email",
+        ge=0
+    )
+
+    tone_matches_template: bool = Field(
+        description="True if tone matches original template",
+        default=True
+    )
 
 
 class ComposedEmail(BaseModel):
-    """
-    Final composed email from Anthropic.
-    """
+    """Final composed email ready for database storage."""
 
     email_content: str = Field(
-        ...,
-        min_length=100,
-        max_length=5000,
-        description="Final email content"
+        description="Final email text",
+        min_length=50,
+        max_length=10000
     )
 
-    @validator("email_content")
-    def validate_no_placeholders(cls, v):
-        """Ensure no unfilled placeholders remain"""
-        if "{{" in v or "}}" in v:
-            raise ValueError("Email contains unfilled placeholders")
-        return v
+    validation_result: EmailValidationResult = Field(
+        description="Validation result"
+    )
+
+    generation_metadata: dict = Field(
+        description="Metadata about generation process",
+        default_factory=dict
+    )
+
+    @field_validator("email_content")
+    @classmethod
+    def validate_email_content(cls, v: str) -> str:
+        """Ensure email is non-empty after stripping"""
+        if not v.strip():
+            raise ValueError("Email content cannot be empty")
+        return v.strip()
 ```
 
 #### File: `pipeline/steps/email_composer/prompts.py`
 
 ```python
 """
-Prompts for EmailComposer step.
+Email Composer Prompts
 
-Migrated from legacy final_together() function with improvements.
+Prompts for email generation - migrated from legacy code with improvements.
 """
 
+from typing import List
 
-def get_email_composition_prompt(
-    email_template: str,
-    recipient_name: str,
-    recipient_interest: str,
-    template_type: str,
-    scraped_content: str,
-    arxiv_papers: list,
-    template_analysis: dict
-) -> str:
-    """
-    Generate prompt for email composition.
 
-    This is the main prompt that generates the final email.
-    """
+SYSTEM_PROMPT = """You are an expert cold email writer who specializes in crafting authentic, human-like academic outreach emails.
 
-    # Build context from scraped content
-    web_context = f"""
-**WEB SEARCH CONTEXT:**
-{scraped_content[:3000]}  # Limit to avoid token overflow
-"""
+Your PRIMARY goal is to write in a natural, conversational way that perfectly matches the sender's unique writing style and tone.
 
-    # Build papers context (if available)
-    papers_context = ""
-    if arxiv_papers:
-        papers_list = "\n".join([
-            f"- \"{paper['title']}\" ({paper['year']}) - {paper['abstract'][:200]}..."
-            for paper in arxiv_papers[:3]
-        ])
-        papers_context = f"""
-**RESEARCH PAPERS BY {recipient_name}:**
-{papers_list}
-"""
-
-    # Get template tone and topics
-    tone = template_analysis.get("tone", "professional")
-    key_topics = template_analysis.get("key_topics", [])
-
-    return f"""You are an expert cold email writer who specializes in crafting authentic, human-like academic outreach emails.
-
-**YOUR PRIMARY GOAL:** Write in a natural, conversational way that perfectly matches the sender's unique writing style and tone.
-
-**WRITING PHILOSOPHY:**
+WRITING PHILOSOPHY:
 - Write like a real person, not an AI - avoid robotic or overly formal language
 - Every email template has its own personality - study and mirror it exactly
 - The recipient should feel like they're hearing from a genuine human who took time to research them
 - Natural flow is more important than perfect grammar - write how people actually email
 
-**TEMPLATE TO COMPLETE:**
+CORE RESPONSIBILITIES:
+1. MATCH THE EXACT WRITING STYLE: Study the template's vocabulary, sentence structure, energy level, and personality
+2. Replace ALL text within placeholders ({{variable}} or [variable]) with appropriate, specific information
+3. Preserve ALL other text in the template exactly as written
+4. Write replacements that sound like they came from the same person who wrote the template
+5. PRESERVE THE ORIGINAL FORMATTING - maintain paragraph breaks, line spacing, and structure
+
+STYLE MATCHING GUIDELINES:
+- If the template is casual and uses contractions, your replacements should too
+- If the template is energetic with exclamation points, maintain that energy
+- If the template is reserved and formal, keep replacements similarly professional
+- Match the sentence length patterns - short & punchy or long & flowing
+- Use similar vocabulary complexity as the surrounding text
+- Ensure replacements flow seamlessly with the template text
+
+CRITICAL:
+- Include specific publication titles when available in the research data
+- Make all references sound natural and conversational
+- NEVER leave placeholders unfilled - always replace with actual content
+- NEVER add AI-sounding phrases like "cutting-edge" unless the template uses them"""
+
+
+def create_composition_prompt(
+    email_template: str,
+    recipient_name: str,
+    recipient_interest: str,
+    scraped_content: str,
+    arxiv_papers: List[dict],
+    template_analysis: dict
+) -> str:
+    """
+    Create prompt for email composition.
+
+    Args:
+        email_template: Original template with placeholders
+        recipient_name: Professor name
+        recipient_interest: Research interest
+        scraped_content: Summarized web content from Step 2
+        arxiv_papers: Papers from Step 3 (may be empty)
+        template_analysis: Analysis from Step 1
+
+    Returns:
+        Formatted user prompt
+    """
+    # Format ArXiv papers
+    arxiv_section = "NOT AVAILABLE - No ArXiv papers found or not a RESEARCH template."
+
+    if arxiv_papers:
+        arxiv_section = "=== ARXIV PAPERS ===\n"
+        for i, paper in enumerate(arxiv_papers[:5], 1):
+            arxiv_section += f"\n{i}. Title: {paper['title']}\n"
+            arxiv_section += f"   Authors: {', '.join(paper['authors'][:3])}\n"
+            arxiv_section += f"   Year: {paper['year']}\n"
+            arxiv_section += f"   Relevance: {paper.get('relevance_score', 0):.2f}\n"
+
+    # Build prompt
+    prompt = f"""TASK: Fill in this cold email template for Professor {recipient_name}, a {recipient_interest} researcher.
+
+STEP 1 - ANALYZE THE WRITING STYLE:
+Before making any replacements, carefully study the template to understand:
+- The overall tone: {template_analysis.get('tone', 'conversational')}
+- Key topics: {', '.join(template_analysis.get('key_topics', []))}
+- The writer's personality that comes through
+
+TEMPLATE TO COMPLETE:
 {email_template}
 
-**RECIPIENT INFORMATION:**
-Name: {recipient_name}
-Field/Interest: {recipient_interest}
-Template Type: {template_type}
+AVAILABLE INFORMATION:
 
-**AVAILABLE RESEARCH DATA:**
-{web_context}
+{arxiv_section}
 
-{papers_context if papers_context else "**Note:** No research papers found. Use web context to personalize."}
+=== WEB RESEARCH DATA ===
+{scraped_content[:10000]}
 
-**TEMPLATE STYLE ANALYSIS:**
-- Detected Tone: {tone}
-- Key Topics: {', '.join(key_topics)}
+CRITICAL INSTRUCTIONS FOR NATURAL WRITING:
+1. Your replacements should sound EXACTLY like the person who wrote the template
+2. Prioritize natural flow over perfect accuracy - write how a real person would
+3. Use conversational transitions and connectors that match the template style
+4. If the template is informal, your replacements should be equally informal
+5. Avoid AI-sounding phrases like "cutting-edge", "groundbreaking", "innovative" unless the template uses similar language
+6. Include specific publication titles when available, but introduce them naturally as the template writer would
+7. PRESERVE ALL PARAGRAPH BREAKS AND FORMATTING from the original template
+8. REPLACE ALL PLACEHOLDERS - no {{{{variables}}}} or [brackets] should remain
 
-**CRITICAL INSTRUCTIONS:**
+REMEMBER:
+- Write like you're the same person who wrote the template
+- Keep the energy level consistent throughout
+- Make it feel genuine and personal, not like a mail merge
+- The professor should feel like they're getting a real, thoughtful email from someone who actually read their work
 
-1. **MATCH THE EXACT WRITING STYLE:**
-   - Study the template's vocabulary, sentence structure, energy level, and personality
-   - Your replacements should sound EXACTLY like the person who wrote the template
-   - If the template is casual and uses contractions, your replacements should too
-   - If the template is energetic with exclamation points, maintain that energy
-   - Match the sentence length patterns - short & punchy or long & flowing
+Generate the complete email now, with all placeholders filled naturally and authentically:"""
 
-2. **FILL ALL PLACEHOLDERS:**
-   - Replace ALL text within square brackets [ ] or curly braces {{{{ }}}} with specific information
-   - Use the research data to fill placeholders naturally
-   - NEVER leave placeholders unfilled
-   - NEVER use phrases like "your work" or "your research" without specifics
-
-3. **PUBLICATION MENTIONS (for template_type='research'):**
-   - Include at least ONE specific publication title
-   - Introduce it naturally as the template writer would
-   - Don't use AI-sounding phrases like "groundbreaking" or "cutting-edge" unless the template uses them
-
-4. **PRESERVE FORMATTING:**
-   - Maintain ALL paragraph breaks from the original template
-   - Keep the same line spacing and structure
-   - Preserve greeting and closing if present
-
-5. **NATURAL WRITING:**
-   - Prioritize natural flow over perfect accuracy
-   - Use conversational transitions that match the template style
-   - Avoid generic phrases - be specific using the research data
-   - Write how a real person would email, not how an AI would
-
-**VALIDATION RULES:**
-- Email must be between 100-5000 characters
-- Email must NOT contain {{{{ }}}} or [ ] brackets
-- Email must mention specific details about {recipient_name}
-- For template_type='research': Must mention at least one publication title
-
-**OUTPUT FORMAT:**
-Return ONLY the completed email, with no preamble or explanation.
-Start with the email greeting and end with the closing.
-
-Generate the email now:"""
+    return prompt
 ```
 
 #### File: `pipeline/steps/email_composer/main.py`
 
 ```python
 """
-EmailComposer step implementation.
+Email Composer Step - Phase 5 Step 4
 
-The FINAL and MOST CRITICAL step - composes email and writes to database.
+Final pipeline step - generates email and writes to database.
+
+Responsibilities:
+- Generate email using Anthropic Claude API
+- Validate email quality
+- Retry if validation fails
+- Write to database
+- Update PipelineData with final email
 """
 
-import anthropic
 import logfire
 from typing import Optional
-import os
-import re
-from uuid import uuid4
 
+from config.settings import settings
 from pipeline.core.runner import BasePipelineStep
-from pipeline.models.core import PipelineData, StepResult, TemplateType
-from pipeline.core.exceptions import ExternalAPIError, ValidationError
-from pipeline.steps.email_composer.models import ComposedEmail, EmailValidation
-from pipeline.steps.email_composer.prompts import get_email_composition_prompt
-from models.email import Email
-from database.session import get_db
+from pipeline.models.core import PipelineData, StepResult
+from utils.llm_agent import create_agent
+
+from .models import ComposedEmail
+from .prompts import SYSTEM_PROMPT, create_composition_prompt
+from .utils import validate_email, clean_email_formatting
+from .db_utils import write_email_to_db, increment_user_generation_count
 
 
 class EmailComposerStep(BasePipelineStep):
     """
-    Step 4: Compose final email and write to database.
+    Step 4: Generate final email and write to database.
 
-    This is the ONLY step that performs database writes.
-    All previous steps only populate PipelineData in-memory.
+    Responsibilities:
+    - Combine data from Steps 1-3
+    - Generate email via Anthropic Claude API
+    - Validate email quality
+    - Retry if validation fails (max 2 attempts)
+    - Write to database
+    - Update PipelineData
+
+    Updates PipelineData fields:
+    - final_email: str (final composed email)
+    - composition_metadata: dict (generation metadata)
+    - metadata["email_id"]: UUID (CRITICAL for pipeline tracking)
     """
 
     def __init__(self):
-        super().__init__("email_composer")
+        """Initialize email composer step."""
+        super().__init__(step_name="email_composer")
 
-        # Initialize Anthropic client
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        # Configuration
+        self.model = "anthropic:claude-sonnet-4-5-20250929"
+        self.temperature = 0.7  # Higher for creative writing
+        self.max_tokens = 2000
+        self.max_retries = 2  # Total attempts = 3 (initial + 2 retries)
 
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.max_retries = 2  # Retry email composition if validation fails
+        # Create pydantic-ai agent for email composition
+        # Using Sonnet for high-quality, creative email writing
+        self.composition_agent = create_agent(
+            model=self.model,
+            system_prompt=SYSTEM_PROMPT,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            retries=1  # Agent-level retries (validation retries handled separately)
+        )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """Validate that all required data is present"""
+        """
+        Validate prerequisites.
+
+        Required:
+        - email_template: Original template (from initialization)
+        - recipient_name: Recipient name
+        - recipient_interest: Research interest
+        - template_analysis: Analysis from Step 1
+        - scraped_content: Web data from Step 2
+        - user_id: For database write
+
+        Optional:
+        - arxiv_papers: Papers from Step 3 (may be empty)
+        """
+        if not pipeline_data.email_template:
+            return "email_template is missing"
+
+        if not pipeline_data.recipient_name:
+            return "recipient_name is missing"
+
+        if not pipeline_data.recipient_interest:
+            return "recipient_interest is missing"
+
+        if not pipeline_data.template_analysis:
+            return "template_analysis is missing (Step 1 must run first)"
 
         if not pipeline_data.scraped_content:
-            return "scraped_content is empty (WebScraper step must run first)"
+            return "scraped_content is missing (Step 2 must run first)"
 
-        # For RESEARCH templates, papers are recommended but not required
-        if pipeline_data.template_type == TemplateType.RESEARCH:
-            if not pipeline_data.arxiv_papers:
-                logfire.warning(
-                    "No ArXiv papers found for RESEARCH template",
-                    recipient=pipeline_data.recipient_name
-                )
-                # Not a fatal error - can compose email with web data only
+        if not pipeline_data.user_id:
+            return "user_id is missing (required for database write)"
 
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
         """
-        Compose email and write to database.
+        Execute email generation and database write.
 
-        This is the ONLY database write in the entire pipeline.
-
-        Updates:
-        - pipeline_data.final_email
-        - pipeline_data.composition_metadata
-        - pipeline_data.metadata["email_id"]
-        - Writes to emails table in database
-
-        Args:
-            pipeline_data: Shared data object
-
-        Returns:
-            StepResult with email_id
+        Steps:
+        1. Prepare composition prompt
+        2. Generate email via Anthropic API
+        3. Validate email quality
+        4. Retry if validation fails (max 2 retries)
+        5. Write to database
+        6. Update PipelineData
         """
+        try:
+            # Step 1: Prepare prompt
+            user_prompt = create_composition_prompt(
+                email_template=pipeline_data.email_template,
+                recipient_name=pipeline_data.recipient_name,
+                recipient_interest=pipeline_data.recipient_interest,
+                scraped_content=pipeline_data.scraped_content,
+                arxiv_papers=pipeline_data.arxiv_papers or [],
+                template_analysis=pipeline_data.template_analysis
+            )
 
-        # Attempt email composition (with retry)
-        composed_email = None
-        validation_attempts = 0
+            logfire.info(
+                "Generating email with Anthropic",
+                model=self.model,
+                temperature=self.temperature,
+                recipient_name=pipeline_data.recipient_name
+            )
 
-        for attempt in range(self.max_retries + 1):
-            validation_attempts += 1
-
-            # Compose email with Anthropic
-            email_text = await self._compose_email_with_anthropic(pipeline_data)
-
-            # Validate email quality
-            validation = self._validate_email(
-                email_text=email_text,
+            # Step 2 & 3: Generate and validate (with retries)
+            composed_email = await self._generate_with_validation(
+                user_prompt=user_prompt,
                 recipient_name=pipeline_data.recipient_name,
                 template_type=pipeline_data.template_type
             )
 
-            if validation.is_valid:
-                composed_email = email_text
-                break
-            else:
-                logfire.warning(
-                    "Email validation failed",
-                    attempt=attempt + 1,
-                    issues=validation.issues
+            if not composed_email:
+                # All retry attempts failed
+                return StepResult(
+                    success=False,
+                    step_name=self.step_name,
+                    error="Failed to generate valid email after all retry attempts"
                 )
 
-                # If last attempt, accept email despite issues
-                if attempt == self.max_retries:
-                    composed_email = email_text
-                    logfire.warning(
-                        "Accepting email despite validation issues (max retries reached)",
-                        issues=validation.issues
-                    )
-
-        if not composed_email:
-            raise ValidationError("Failed to compose valid email after retries")
-
-        # Write to database (ONLY database write in pipeline!)
-        email_id = await self._write_to_database(
-            pipeline_data=pipeline_data,
-            email_content=composed_email
-        )
-
-        # Update pipeline data with final results
-        pipeline_data.final_email = composed_email
-        pipeline_data.composition_metadata = {
-            "validation_attempts": validation_attempts,
-            "email_length": len(composed_email),
-            "has_papers": len(pipeline_data.arxiv_papers) > 0
-        }
-        pipeline_data.metadata["email_id"] = email_id
-
-        logfire.info(
-            "Email composition completed and saved to database",
-            email_id=email_id,
-            email_length=len(composed_email),
-            validation_attempts=validation_attempts
-        )
-
-        # Return success
-        return StepResult(
-            success=True,
-            step_name=self.step_name,
-            metadata={
-                "email_id": email_id,
-                "email_length": len(composed_email)
-            }
-        )
-
-    async def _compose_email_with_anthropic(
-        self,
-        pipeline_data: PipelineData
-    ) -> str:
-        """
-        Call Anthropic API to compose email.
-
-        Args:
-            pipeline_data: Shared data
-
-        Returns:
-            Composed email text
-
-        Raises:
-            ExternalAPIError: If Anthropic API fails
-        """
-
-        # Build prompt
-        prompt = get_email_composition_prompt(
-            email_template=pipeline_data.email_template,
-            recipient_name=pipeline_data.recipient_name,
-            recipient_interest=pipeline_data.recipient_interest,
-            template_type=pipeline_data.template_type.value,
-            scraped_content=pipeline_data.scraped_content or "",
-            arxiv_papers=pipeline_data.arxiv_papers,
-            template_analysis=pipeline_data.template_analysis or {}
-        )
-
-        try:
-            # Call Anthropic with Logfire span
-            with logfire.span("anthropic.email_composition"):
-                response = self.client.messages.create(
-                    model="claude-3-5-sonnet-20241022",
-                    max_tokens=2048,
-                    temperature=0.7,  # Higher for more natural/creative output
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ]
-                )
-
-            # Extract email content
-            email_text = response.content[0].text.strip()
-
-            logfire.info(
-                "Anthropic response received",
-                response_length=len(email_text),
-                model=response.model
+            # Step 4: Write to database
+            email_id = await write_email_to_db(
+                user_id=pipeline_data.user_id,
+                recipient_name=pipeline_data.recipient_name,
+                recipient_interest=pipeline_data.recipient_interest,
+                email_content=composed_email.email_content
             )
 
-            return email_text
-
-        except anthropic.APIError as e:
-            logfire.error("Anthropic API error", error=str(e))
-            raise ExternalAPIError(f"Anthropic API failed: {e}")
-
-    def _validate_email(
-        self,
-        email_text: str,
-        recipient_name: str,
-        template_type: TemplateType
-    ) -> EmailValidation:
-        """
-        Validate composed email quality.
-
-        Args:
-            email_text: Composed email
-            recipient_name: Recipient's name
-            template_type: Type of template
-
-        Returns:
-            EmailValidation with results
-        """
-
-        issues = []
-        warnings = []
-
-        # Check length
-        length = len(email_text)
-        if length < 100:
-            issues.append("Email too short (< 100 chars)")
-        elif length > 5000:
-            issues.append("Email too long (> 5000 chars)")
-
-        # Check for unfilled placeholders
-        has_placeholders = "{{" in email_text or "}}" in email_text or "[" in email_text
-        if has_placeholders:
-            issues.append("Email contains unfilled placeholders")
-
-        # Check recipient name mentioned
-        last_name = recipient_name.split()[-1]
-        if last_name.lower() not in email_text.lower():
-            warnings.append("Recipient last name not found in email")
-
-        # For RESEARCH templates, check for publication mention
-        has_publication_mention = False
-        if template_type == TemplateType.RESEARCH:
-            # Look for quoted titles or common publication indicators
-            if '"' in email_text or "paper" in email_text.lower() or "publication" in email_text.lower():
-                has_publication_mention = True
-            else:
-                warnings.append("No clear publication mention found")
-
-        # Check for common placeholder text that LLM might leave
-        placeholder_patterns = [
-            "your work",
-            "your research",
-            "[insert",
-            "TODO",
-            "PLACEHOLDER"
-        ]
-        for pattern in placeholder_patterns:
-            if pattern.lower() in email_text.lower():
-                warnings.append(f"Generic phrase detected: '{pattern}'")
-
-        # Determine if valid
-        is_valid = len(issues) == 0
-
-        return EmailValidation(
-            is_valid=is_valid,
-            issues=issues,
-            warnings=warnings,
-            has_publication_mention=has_publication_mention,
-            has_placeholders=has_placeholders,
-            length=length
-        )
-
-    async def _write_to_database(
-        self,
-        pipeline_data: PipelineData,
-        email_content: str
-    ) -> str:
-        """
-        Write final email to database.
-
-        This is the ONLY database write in the entire pipeline!
-
-        Args:
-            pipeline_data: Shared data with all context
-            email_content: Final composed email
-
-        Returns:
-            email_id (UUID as string)
-        """
-
-        # Generate email ID
-        email_id = uuid4()
-
-        # Prepare metadata for JSONB column
-        metadata = {
-            "papers_used": [
-                paper["title"]
-                for paper in pipeline_data.arxiv_papers[:5]
-            ] if pipeline_data.arxiv_papers else [],
-            "sources": pipeline_data.scraped_urls[:10],
-            "generation_time": pipeline_data.total_duration(),
-            "step_timings": pipeline_data.step_timings,
-            "template_tone": pipeline_data.template_analysis.get("tone") if pipeline_data.template_analysis else None,
-            "validation_warnings": pipeline_data.errors
-        }
-
-        # Create database record
-        with logfire.span("database.insert_email", email_id=str(email_id)):
-            try:
-                db = next(get_db())
-
-                email_record = Email(
-                    id=email_id,
-                    user_id=pipeline_data.user_id,
-                    recipient_name=pipeline_data.recipient_name,
-                    recipient_interest=pipeline_data.recipient_interest,
-                    email_message=email_content,
-                    template_type=pipeline_data.template_type.value,
-                    metadata=metadata
+            if not email_id:
+                return StepResult(
+                    success=False,
+                    step_name=self.step_name,
+                    error="Failed to write email to database"
                 )
 
-                db.add(email_record)
-                db.commit()
-                db.refresh(email_record)
+            logfire.info(
+                "Email written to database",
+                email_id=str(email_id),
+                word_count=composed_email.validation_result.word_count
+            )
+
+            # Step 5: Increment user generation count (non-critical)
+            await increment_user_generation_count(user_id=pipeline_data.user_id)
+
+            # Step 6: Update PipelineData
+            pipeline_data.final_email = composed_email.email_content
+
+            pipeline_data.composition_metadata = {
+                "email_id": str(email_id),
+                "word_count": composed_email.validation_result.word_count,
+                "mentions_publications": composed_email.validation_result.mentions_publications,
+                "validation_warnings": composed_email.validation_result.warnings,
+                "model": self.model,
+                "temperature": self.temperature,
+                **composed_email.generation_metadata
+            }
+
+            # CRITICAL: Set email_id in metadata for PipelineRunner
+            pipeline_data.metadata["email_id"] = email_id
+
+            # Return success
+            return StepResult(
+                success=True,
+                step_name=self.step_name,
+                metadata={
+                    "email_id": str(email_id),
+                    "word_count": composed_email.validation_result.word_count,
+                    "mentions_publications": composed_email.validation_result.mentions_publications,
+                    "warnings": composed_email.validation_result.warnings
+                }
+            )
+
+        except Exception as e:
+            logfire.error(
+                "Error in email composer",
+                error=str(e),
+                error_type=type(e).__name__
+            )
+
+            return StepResult(
+                success=False,
+                step_name=self.step_name,
+                error=f"Email composer error: {str(e)}"
+            )
+
+    async def _generate_with_validation(
+        self,
+        user_prompt: str,
+        recipient_name: str,
+        template_type: 'TemplateType'
+    ) -> Optional[ComposedEmail]:
+        """
+        Generate email with validation and retry logic.
+
+        Args:
+            user_prompt: Formatted prompt for Claude
+            recipient_name: Recipient name for validation
+            template_type: Type of template (RESEARCH, BOOK, or GENERAL)
+
+        Returns:
+            ComposedEmail if successful, None if all retries failed
+        """
+        for attempt in range(self.max_retries + 1):
+            try:
+                logfire.info(
+                    "Generating email attempt",
+                    attempt=attempt + 1,
+                    max_attempts=self.max_retries + 1
+                )
+
+                # Call pydantic-ai agent for email generation
+                # Agent automatically logs to Logfire (prompt, response, tokens, cost, latency)
+                result = await self.composition_agent.run(user_prompt)
+                raw_email = result.output.strip()
+
+                # Clean formatting
+                cleaned_email = clean_email_formatting(raw_email)
 
                 logfire.info(
-                    "Email saved to database",
-                    email_id=str(email_id),
-                    user_id=pipeline_data.user_id
+                    "Email generated",
+                    attempt=attempt + 1,
+                    word_count=len(cleaned_email.split()),
+                    length=len(cleaned_email)
                 )
 
-                return str(email_id)
+                # Validate email
+                validation_result = validate_email(
+                    email_content=cleaned_email,
+                    recipient_name=recipient_name,
+                    template_type=template_type
+                )
+
+                # Check if valid
+                if validation_result.is_valid:
+                    logfire.info(
+                        "Email validation passed",
+                        attempt=attempt + 1,
+                        warnings_count=len(validation_result.warnings)
+                    )
+
+                    # Build ComposedEmail
+                    # Note: Token counts are automatically logged to Logfire by pydantic-ai
+                    composed_email = ComposedEmail(
+                        email_content=cleaned_email,
+                        validation_result=validation_result,
+                        generation_metadata={
+                            "attempts": attempt + 1,
+                            "model": self.model
+                        }
+                    )
+
+                    return composed_email
+
+                else:
+                    # Validation failed
+                    logfire.warning(
+                        "Email validation failed",
+                        attempt=attempt + 1,
+                        issues=validation_result.issues,
+                        warnings=validation_result.warnings
+                    )
+
+                    # Retry if attempts remain
+                    if attempt < self.max_retries:
+                        logfire.info(
+                            "Retrying email generation",
+                            remaining_attempts=self.max_retries - attempt
+                        )
+                        continue
+                    else:
+                        # No more retries - return last attempt anyway
+                        logfire.error(
+                            "All validation attempts failed - using last attempt",
+                            issues=validation_result.issues
+                        )
+
+                        return ComposedEmail(
+                            email_content=cleaned_email,
+                            validation_result=validation_result,
+                            generation_metadata={
+                                "attempts": attempt + 1,
+                                "model": self.model,
+                                "validation_failed": True
+                            }
+                        )
 
             except Exception as e:
-                db.rollback()
-                logfire.error("Database write failed", error=str(e))
-                raise
-            finally:
-                db.close()
+                logfire.error(
+                    "Error generating email",
+                    attempt=attempt + 1,
+                    error=str(e)
+                )
+
+                # Retry if attempts remain
+                if attempt < self.max_retries:
+                    continue
+                else:
+                    return None
+
+        return None
 ```
 
 ---
@@ -3546,9 +4559,9 @@ services:
 
 ### 9.2 Migration Checklist
 
-- [ ] Set up Redis and Celery workers
-- [ ] Add `template_type` and `metadata` columns to emails table
-- [ ] Implement all 4 pipeline steps
+- [x] Set up Redis and Celery workers
+- [x] Add `template_type` and `metadata` columns to emails table
+- [x] Implement all 4 pipeline steps
 - [ ] Create Celery tasks
 - [ ] Update API endpoints
 - [ ] Test with production API keys
@@ -3556,5 +4569,367 @@ services:
 - [ ] Gradual rollout to production
 - [ ] Monitor Logfire dashboards
 - [ ] Deprecate legacy endpoints
+
+---
+
+## 10. What's Left - Path to Production
+
+This section details all remaining work before the pipeline is fully operational and users can send requests through the Render server.
+
+### 10.1 Celery Task Implementation (HIGH PRIORITY)
+
+**Status:** Infrastructure ready, tasks NOT implemented
+
+**What exists:**
+- `celery_config.py`: Celery app configuration ✅
+- `worker.py`: Celery worker entry point ✅
+- Queue and routing configuration ✅
+
+**What's missing:**
+- **Actual Celery task definitions** for email generation
+- Task file location should be: `tasks/email_tasks.py`
+- Required task: `generate_email_task(task_id, user_id, email_template, recipient_name, recipient_interest)`
+
+**Implementation needed:**
+```python
+# tasks/email_tasks.py (DOES NOT EXIST YET)
+
+from celery_config import celery_app
+from pipeline.core.runner import PipelineRunner
+from pipeline.steps.template_parser.main import TemplateParserStep
+from pipeline.steps.web_scraper.main import WebScraperStep
+from pipeline.steps.arxiv_helper.main import ArxivHelperStep
+from pipeline.steps.email_composer.main import EmailComposerStep
+from pipeline.models.core import PipelineData, JobStatus
+import logfire
+
+
+@celery_app.task(bind=True, name="tasks.generate_email")
+def generate_email_task(
+    self,
+    task_id: str,
+    user_id: str,
+    email_template: str,
+    recipient_name: str,
+    recipient_interest: str
+):
+    """
+    Celery task for email generation pipeline.
+
+    This task orchestrates the 4-step pipeline and handles all error cases.
+    """
+    # Implementation needed:
+    # 1. Create PipelineData
+    # 2. Initialize PipelineRunner with steps
+    # 3. Run pipeline with error handling
+    # 4. Return email_id on success
+    # 5. Update task status in Redis/database
+    pass
+```
+
+**Blocker:** This is the CRITICAL missing piece - without Celery tasks, the API cannot trigger email generation asynchronously.
+
+---
+
+### 10.2 API Routes for Email Generation (HIGH PRIORITY)
+
+**Status:** User management complete, email generation endpoints NOT implemented
+
+**What exists:**
+- `api/routes/user.py`: User initialization and profile ✅
+- `api/dependencies.py`: Authentication dependencies ✅
+- FastAPI app structure ✅
+
+**What's missing:**
+- **Email generation API endpoints** in `api/routes/email.py` (FILE DOES NOT EXIST)
+- Required endpoints:
+  - `POST /api/email/generate`: Trigger email generation task
+  - `GET /api/email/status/{task_id}`: Check task status
+  - `GET /api/email/{email_id}`: Retrieve generated email
+  - `GET /api/email/history`: User's email history
+
+**Implementation template:**
+```python
+# api/routes/email.py (DOES NOT EXIST YET)
+
+from fastapi import APIRouter, Depends, HTTPException
+from api.dependencies import get_current_user
+from models.user import User
+from tasks.email_tasks import generate_email_task
+import uuid
+
+router = APIRouter(prefix="/api/email", tags=["email"])
+
+
+@router.post("/generate")
+async def trigger_email_generation(
+    request: EmailGenerationRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Trigger async email generation via Celery.
+
+    Returns task_id for status polling.
+    """
+    task_id = str(uuid.uuid4())
+
+    # Trigger Celery task
+    generate_email_task.delay(
+        task_id=task_id,
+        user_id=current_user.id,
+        email_template=request.email_template,
+        recipient_name=request.recipient_name,
+        recipient_interest=request.recipient_interest
+    )
+
+    return {
+        "task_id": task_id,
+        "status": "pending",
+        "message": "Email generation started"
+    }
+
+
+@router.get("/status/{task_id}")
+async def get_task_status(
+    task_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Poll task status from Celery."""
+    # Implementation needed
+    pass
+```
+
+**Blocker:** Frontend cannot trigger email generation without these endpoints.
+
+---
+
+### 10.3 Pydantic Schemas for API Validation (MEDIUM PRIORITY)
+
+**Status:** Partially complete
+
+**What exists:**
+- `schemas/auth.py`: Authentication schemas ✅
+
+**What's missing:**
+- **Email generation request/response schemas** in `schemas/email.py` (FILE DOES NOT EXIST)
+- Required schemas:
+  - `EmailGenerationRequest`: Validate generation inputs
+  - `EmailGenerationResponse`: Task initiation response
+  - `EmailStatusResponse`: Task status polling response
+  - `EmailHistoryResponse`: List of generated emails
+
+**Implementation template:**
+```python
+# schemas/email.py (DOES NOT EXIST YET)
+
+from pydantic import BaseModel, Field
+from typing import Optional
+from datetime import datetime
+from pipeline.models.core import TemplateType, JobStatus
+
+
+class EmailGenerationRequest(BaseModel):
+    email_template: str = Field(..., min_length=10, max_length=5000)
+    recipient_name: str = Field(..., min_length=2, max_length=200)
+    recipient_interest: str = Field(..., min_length=2, max_length=500)
+
+
+class EmailGenerationResponse(BaseModel):
+    task_id: str
+    status: JobStatus
+    message: str
+
+
+class EmailStatusResponse(BaseModel):
+    task_id: str
+    status: JobStatus
+    email_id: Optional[str] = None
+    error: Optional[str] = None
+    progress: Optional[dict] = None  # Step-by-step progress
+```
+
+---
+
+### 10.4 Environment Variables and Configuration (HIGH PRIORITY)
+
+**Status:** Partial - missing deployment-specific configs
+
+**What exists:**
+- `config/settings.py`: Pydantic Settings class ✅
+- Local `.env` file ✅
+
+**What's missing for Render deployment:**
+- **Redis URL configuration** for Celery broker
+- **Google Custom Search API credentials** (required for Web Scraper)
+- **ArXiv API access** (currently using `arxiv` library, no key needed)
+- **Playwright browser setup** for production (headless Chrome in containers)
+
+**Required Render environment variables:**
+```bash
+# Already set (from current deployment):
+DATABASE_URL=postgresql://...
+SUPABASE_URL=https://...
+SUPABASE_SERVICE_ROLE_KEY=...
+ANTHROPIC_API_KEY=sk-ant-...
+LOGFIRE_TOKEN=...
+
+# MISSING - need to add in Render dashboard:
+CELERY_BROKER_URL=redis://...  # Redis connection string
+CELERY_RESULT_BACKEND=redis://...
+GOOGLE_API_KEY=...  # For Custom Search API
+GOOGLE_CSE_ID=...  # Custom Search Engine ID
+```
+
+**Action items:**
+1. Set up Redis instance on Render (or use external Redis provider like Upstash)
+2. Create Google Custom Search API credentials
+3. Add environment variables to Render dashboard
+4. Update `config/settings.py` to include new variables
+
+---
+
+### 10.5 Database Migrations (LOW PRIORITY)
+
+**Status:** Mostly complete
+
+**What exists:**
+- Alembic migrations for `users` and `emails` tables ✅
+- Database connection working ✅
+
+**What might be needed:**
+- **Task status tracking table** (optional - can use Redis instead)
+- Useful for debugging failed tasks and historical tracking
+- Schema:
+  ```sql
+  CREATE TABLE task_status (
+      task_id UUID PRIMARY KEY,
+      user_id UUID REFERENCES users(id),
+      status VARCHAR(20),  -- pending, running, completed, failed
+      created_at TIMESTAMP,
+      updated_at TIMESTAMP,
+      error_message TEXT,
+      email_id UUID REFERENCES emails(id)
+  );
+  ```
+
+---
+
+### 10.6 Testing Requirements (MEDIUM PRIORITY)
+
+**Status:** Unit tests exist for some steps, end-to-end tests missing
+
+**What exists:**
+- Unit tests for Template Parser ✅
+- Test fixtures and conftest.py ✅
+- pytest configuration ✅
+
+**What's missing:**
+- **Integration tests** for full pipeline execution
+- **API endpoint tests** for email generation routes
+- **Celery task tests** with mocked external APIs
+- **Load testing** for concurrent email generation
+
+**Priority test cases needed:**
+1. Full pipeline execution (all 4 steps)
+2. API endpoint: POST /api/email/generate
+3. API endpoint: GET /api/email/status/{task_id}
+4. Error handling: Invalid inputs
+5. Error handling: External API failures (Google, ArXiv, Anthropic)
+6. Concurrent task execution (10+ tasks)
+
+---
+
+### 10.7 Playwright Browser Setup for Production (HIGH PRIORITY)
+
+**Status:** Local implementation done, production deployment needs configuration
+
+**What exists:**
+- `scrape_url()` function using Playwright ✅
+- Headless browser configuration ✅
+- `--no-sandbox` flag for containers ✅
+
+**What's needed for Render:**
+- **Browser binaries installation** in Docker container
+- Playwright browsers are ~300MB
+- Render's build process must include: `playwright install chromium`
+- Update `requirements.txt` or add build script
+
+**Dockerfile additions needed:**
+```dockerfile
+# Install Playwright dependencies
+RUN playwright install --with-deps chromium
+
+# Alternative: Use playwright-python slim
+RUN playwright install chromium --with-deps
+```
+
+**Render build command:**
+```bash
+pip install -r requirements.txt && playwright install chromium
+```
+
+---
+
+### 10.8 Frontend Integration Points (LOW PRIORITY - Backend Focus)
+
+**Status:** Not applicable (backend-only implementation)
+
+**What frontend will need:**
+- API endpoints listed in Section 10.2
+- WebSocket support for real-time progress updates (optional enhancement)
+- Error message handling for failed generations
+
+---
+
+## 10.9 Deployment Checklist - Production Readiness
+
+### ✅ Completed
+- [x] Pipeline core architecture (PipelineRunner, BasePipelineStep)
+- [x] All 4 pipeline steps implemented and tested
+- [x] Database models and migrations
+- [x] User authentication and authorization
+- [x] Pydantic-ai agent integration
+- [x] Logfire instrumentation
+- [x] Two-tier summarization architecture
+- [x] Playwright web scraping
+- [x] ArXiv integration with relevance scoring
+- [x] Email validation with retry logic
+
+### 🚧 In Progress / Blocked
+- [ ] **Celery task implementation** (tasks/email_tasks.py) - **BLOCKER**
+- [ ] **Email generation API endpoints** (api/routes/email.py) - **BLOCKER**
+- [ ] **Pydantic schemas for email** (schemas/email.py) - **BLOCKER**
+- [ ] **Redis setup on Render** - **BLOCKER**
+- [ ] **Google Custom Search API credentials** - **BLOCKER**
+- [ ] **Playwright browser installation in production** - **BLOCKER**
+
+### 📋 Nice to Have (Post-MVP)
+- [ ] Task status tracking database table
+- [ ] WebSocket support for real-time updates
+- [ ] Comprehensive integration test suite
+- [ ] Load testing and performance benchmarks
+- [ ] Admin dashboard for monitoring tasks
+- [ ] Rate limiting and usage quotas
+
+---
+
+## 10.10 Estimated Timeline to Production
+
+**Critical Path (minimum viable product):**
+1. **Celery tasks implementation** - 4-6 hours
+2. **API endpoints for email generation** - 3-4 hours
+3. **Pydantic schemas** - 1-2 hours
+4. **Redis setup on Render** - 1-2 hours
+5. **Google Custom Search API setup** - 1 hour
+6. **Playwright production config** - 2-3 hours
+7. **Integration testing** - 3-4 hours
+8. **Deployment and smoke testing** - 2-3 hours
+
+**Total estimated time:** 17-25 hours (2-3 full working days)
+
+**Biggest unknowns:**
+- Redis performance on Render (may need external provider like Upstash)
+- Playwright memory usage in production (may hit Render memory limits)
+- Google Custom Search API quota and cost
 
 ---
