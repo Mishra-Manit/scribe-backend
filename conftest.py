@@ -7,6 +7,7 @@ This file configures pytest for the entire project, ensuring:
 - Async test support
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,7 @@ def pytest_configure(config):
         service_name="pythonserver_tests",
         environment="test",
         send_to_logfire=True,  # Send test logs to remote server for debugging
+        token=os.getenv("LOGFIRE_TOKEN"),  # Authenticate with Logfire server, we purposely do not use the settings.logfire_token here to prevent conflicts with the main application.
     )
 
     # Ensure pydantic-ai agents emit detailed spans (inputs/outputs) in tests

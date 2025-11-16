@@ -46,13 +46,13 @@ class LogfireConfig:
         logfire.configure(
             token=token,
             service_name="scribe-pipeline",
-            environment=os.getenv("ENVIRONMENT", "development"),
             send_to_logfire=True,
         )
 
         # Enable automatic instrumentation for pydantic-ai agents
         # This logs all LLM calls with inputs, outputs, tokens, cost, and latency
-        logfire.instrument_pydantic_ai()
+        # Instrument pydantic models and validation for structured logging
+        logfire.instrument_pydantic_ai() 
 
         cls._initialized = True
 

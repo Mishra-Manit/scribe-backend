@@ -6,9 +6,11 @@ Loads and validates environment variables with type safety.
 from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-import logfire
 
-logfire.configure()
+# NOTE: logfire.configure() was removed from here to prevent conflicts with test configuration.
+# Logfire should be configured once at application startup (main.py via observability/logfire_config.py)
+# or in pytest hooks (conftest.py). Calling configure() at module import time creates a local-only
+# instance that prevents proper remote logging and pydantic-ai instrumentation.
 
 
 class Settings(BaseSettings):

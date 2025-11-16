@@ -754,32 +754,3 @@ async def test_step_respects_low_temperature(template_parser, research_template)
         results=results
     )
 
-
-# ===================================================================
-# PYTEST CONFIGURATION
-# ===================================================================
-
-def pytest_configure(config):
-    """Configure pytest with custom markers and logfire setup"""
-    config.addinivalue_line(
-        "markers",
-        "slow: marks tests as slow (deselect with '-m \"not slow\"')"
-    )
-
-    # Configure logfire for testing
-    logfire.configure(
-        service_name="template_parser_tests",
-        environment="test"
-    )
-
-    logfire.info("Starting template parser test suite")
-
-
-def pytest_sessionfinish(session, exitstatus):
-    """Log test session completion"""
-    logfire.info(
-        "Template parser test suite completed",
-        exit_status=exitstatus,
-        tests_collected=session.testscollected,
-        tests_failed=session.testsfailed
-    )

@@ -11,18 +11,16 @@ Performs web scraping using search terms from Step 1:
 import logfire
 import asyncio
 from typing import Optional, List
-
 from pipeline.core.runner import BasePipelineStep
 from pipeline.models.core import PipelineData, StepResult
 from pipeline.core.exceptions import ExternalAPIError
 from config.settings import settings
 from utils.llm_agent import create_agent
 
-from .models import ScrapedPage, ScrapingResult
+from .models import ScrapedPage, ScrapingResult, Summary
 from .google_search import GoogleSearchClient
 from .utils import scrape_url
 from .prompts import SUMMARIZATION_SYSTEM_PROMPT, create_summarization_prompt
-
 
 class WebScraperStep(BasePipelineStep):
     """
@@ -53,6 +51,7 @@ class WebScraperStep(BasePipelineStep):
         # Low temperature for factual, grounded output (anti-hallucination)
         self.summarization_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
+            output_type=Summary,
             system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
             temperature=0.0,  # Zero temperature for maximum factual accuracy
             max_tokens=2000,  # Reduced to match 3000 char limit (~2k tokens)
@@ -61,13 +60,13 @@ class WebScraperStep(BasePipelineStep):
 
         # Configuration
         self.results_per_query = 3
-        self.max_pages_to_scrape = 5
+        self.max_pages_to_scrape = 6
         self.scrape_timeout = 10.0
         self.max_concurrent_scrapes = 2  # Depends on celery workers RAM
 
         # Batch summarization configuration
         self.chunk_size = 30000  # Characters per chunk (for content splitting)
-        self.batch_max_output_chars = 4000  # Max chars per batch summary
+        self.batch_max_output_chars = 2000  # Max chars per batch summary
         self.final_max_output_chars = 3000  # Max chars for final summary
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
@@ -341,13 +340,7 @@ class WebScraperStep(BasePipelineStep):
 
     def _split_into_chunks(self, content: str, chunk_size: int) -> List[str]:
         """
-        Split content into chunks without breaking mid-sentence.
-
-        Algorithm:
-        1. Try to split at chunk_size
-        2. Look backward up to 500 chars for sentence boundary (., !, ?, or \n\n)
-        3. If no boundary found, split at word boundary
-        4. If still no boundary, hard split at chunk_size
+        Split content into chunks of exactly chunk_size characters.
 
         Args:
             content: Full combined text
@@ -364,42 +357,9 @@ class WebScraperStep(BasePipelineStep):
         content_length = len(content)
 
         while position < content_length:
-            # Determine end of this chunk
             end_position = min(position + chunk_size, content_length)
-
-            # If this is the last chunk, take everything
-            if end_position >= content_length:
-                chunks.append(content[position:])
-                break
-
-            # Look backward for sentence boundary (up to 500 chars)
-            search_start = max(position, end_position - 500)
-            chunk_text = content[search_start:end_position]
-
-            # Try to find sentence boundaries (in order of preference)
-            sentence_endings = ['\n\n', '. ', '.\n', '! ', '!\n', '? ', '?\n']
-            best_split = -1
-
-            for ending in sentence_endings:
-                idx = chunk_text.rfind(ending)
-                if idx != -1:
-                    # Convert local index to global index
-                    best_split = search_start + idx + len(ending)
-                    break
-
-            # If no sentence boundary, try word boundary
-            if best_split == -1:
-                last_space = chunk_text.rfind(' ')
-                if last_space != -1:
-                    best_split = search_start + last_space + 1
-
-            # If still no boundary, hard split at chunk_size
-            if best_split == -1:
-                best_split = end_position
-
-            # Extract chunk and update position
-            chunks.append(content[position:best_split].strip())
-            position = best_split
+            chunks.append(content[position:end_position])
+            position = end_position
 
         return chunks
 
@@ -409,7 +369,7 @@ class WebScraperStep(BasePipelineStep):
         batch_number: int,
         total_batches: int,
         recipient_name: str
-    ) -> str:
+    ) -> str:  # Returns summary text string, not Summary object
         """
         Summarize a single content batch using Haiku.
 
@@ -430,6 +390,7 @@ class WebScraperStep(BasePipelineStep):
         # Create batch-specific agent (ephemeral)
         batch_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
+            output_type=Summary,
             system_prompt=BATCH_SUMMARIZATION_SYSTEM_PROMPT,
             temperature=0.0,  # Deterministic extraction
             max_tokens=3000,  # ~4000 chars
@@ -445,30 +406,29 @@ class WebScraperStep(BasePipelineStep):
 
         try:
             result = await batch_agent.run(user_prompt)
-            summary = result.output
+            summary_obj: Summary = result.output  # Summary object from pydantic-ai
+            summary_text: str = summary_obj.summary  # Extract string field
 
             logfire.info(
                 "Batch summarized",
                 batch_number=batch_number,
                 total_batches=total_batches,
                 input_length=len(batch_content),
-                output_length=len(summary)
+                output_length=len(summary_text)
             )
 
-            return summary[:4000]  # Enforce limit
+            return summary_text[:4000]  # Enforce limit
 
         except Exception as e:
             logfire.error(
                 "Batch summarization failed",
                 batch_number=batch_number,
+                total_batches=total_batches,
                 error=str(e)
             )
-            # Fallback: truncate raw content
-            logfire.warning(
-                "Using truncated raw content for batch",
-                batch_number=batch_number
+            raise ExternalAPIError(
+                f"Failed to summarize batch {batch_number}/{total_batches}: {str(e)}"
             )
-            return batch_content[:4000]
 
     async def _summarize_content(
         self,
@@ -476,7 +436,7 @@ class WebScraperStep(BasePipelineStep):
         recipient_name: str,
         recipient_interest: str,
         template_type: 'TemplateType'
-    ) -> str:
+    ) -> str:  # Returns summary text string, not Summary object
         """
         Two-tier summarization with batch processing and final synthesis.
 
@@ -512,27 +472,31 @@ class WebScraperStep(BasePipelineStep):
                 template_type=template_type
             )
 
-            # Wrap agent run in span for observability consistency
-            with logfire.span(
-                "Direct Summarization",
-                content_length=len(content),
-                template_type=template_type.value
-            ):
-                try:
-                    result = await self.summarization_agent.run(user_prompt)
-                    summary = result.output
+            # Direct summarization without manual span wrapper
+            # Let pydantic-ai's auto-instrumentation handle agent spans
+            try:
+                result = await self.summarization_agent.run(user_prompt)
+                summary_obj: Summary = result.output  # Summary object from pydantic-ai
+                summary_text: str = summary_obj.summary  # Extract string field
 
-                    logfire.info(
-                        "Direct summarization completed",
-                        original_length=len(content),
-                        summary_length=len(summary)
-                    )
+                logfire.info(
+                    "Direct summarization completed",
+                    original_length=len(content),
+                    summary_length=len(summary_text),
+                    content_length=len(content),
+                    template_type=template_type.value
+                )
 
-                    return summary[:3000]
+                return summary_text[:3000]
 
-                except Exception as e:
-                    logfire.error("Direct summarization failed", error=str(e))
-                    return content[:3000]
+            except Exception as e:
+                logfire.error(
+                    "Direct summarization failed",
+                    error=str(e),
+                    content_length=len(content),
+                    template_type=template_type.value
+                )
+                raise ExternalAPIError(f"Failed to summarize content: {str(e)}")
 
         # Main flow: Multi-batch processing
         chunks = self._split_into_chunks(content, chunk_size=self.chunk_size)
@@ -545,22 +509,24 @@ class WebScraperStep(BasePipelineStep):
             avg_batch_size=len(content) // total_batches
         )
 
-        # Step 1: Batch Summarizations (under logfire span)
+        # Step 1: Batch Summarizations
+        # Each batch agent.run() will be auto-instrumented by pydantic-ai
         batch_summaries = []
 
-        with logfire.span(
-            "Batch Summarizations",
+        logfire.info(
+            "Processing batch summarizations",
             total_batches=total_batches,
             content_length=len(content)
-        ):
-            for idx, chunk in enumerate(chunks, start=1):
-                batch_summary = await self._summarize_batch(
-                    batch_content=chunk,
-                    batch_number=idx,
-                    total_batches=total_batches,
-                    recipient_name=recipient_name
-                )
-                batch_summaries.append(batch_summary)
+        )
+
+        for idx, chunk in enumerate(chunks, start=1):
+            batch_summary = await self._summarize_batch(
+                batch_content=chunk,
+                batch_number=idx,
+                total_batches=total_batches,
+                recipient_name=recipient_name
+            )
+            batch_summaries.append(batch_summary)
 
         # Step 2: Combine batch summaries with markers
         tiered_summarizations = ""
@@ -580,41 +546,44 @@ class WebScraperStep(BasePipelineStep):
         )
 
         # Step 3: Final Summary Agent (with COT)
-        with logfire.span(
-            "Final Summary Agent",
-            num_batches=len(batch_summaries),
-            template_type=template_type.value
-        ):
-            # Create final summary agent (using Sonnet for higher quality)
-            final_agent = create_agent(
-                model="anthropic:claude-sonnet-4-5-20250929",
-                system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
-                temperature=0.2,  # Slight creativity for synthesis while staying factual
-                max_tokens=2500,  # ~3000 chars
-                retries=2
+        # Agent.run() will be auto-instrumented by pydantic-ai
+        final_agent = create_agent(
+            model="anthropic:claude-haiku-4-5",
+            output_type=Summary,
+            system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
+            temperature=0.2,
+            max_tokens=2500,
+            retries=2
+        )
+
+        final_prompt = create_final_summary_prompt(
+            batch_summaries=tiered_summarizations,
+            recipient_name=recipient_name,
+            recipient_interest=recipient_interest,
+            template_type=template_type
+        )
+
+        
+        try:
+            result = await final_agent.run(final_prompt)
+            summary_obj: Summary = result.output  # Summary object from pydantic-ai
+            final_summary_text: str = summary_obj.summary  # Extract string field
+
+            logfire.info(
+                "Final summary completed",
+                batches_processed=len(batch_summaries),
+                final_length=len(final_summary_text),
+                num_batches=len(batch_summaries),
+                template_type=template_type.value
             )
 
-            final_prompt = create_final_summary_prompt(
-                batch_summaries=tiered_summarizations,
-                recipient_name=recipient_name,
-                recipient_interest=recipient_interest,
-                template_type=template_type
+            return final_summary_text[:3000]
+
+        except Exception as e:
+            logfire.error(
+                "Final summary generation failed",
+                error=str(e),
+                num_batches=len(batch_summaries),
+                template_type=template_type.value
             )
-
-            try:
-                result = await final_agent.run(final_prompt)
-                final_summary = result.output
-
-                logfire.info(
-                    "Final summary completed",
-                    batches_processed=len(batch_summaries),
-                    final_length=len(final_summary)
-                )
-
-                return final_summary[:3000]
-
-            except Exception as e:
-                logfire.error("Final summary generation failed", error=str(e))
-                # Fallback: use first batch summary (better than nothing)
-                logfire.warning("Using first batch summary as fallback")
-                return batch_summaries[0][:3000] if batch_summaries else content[:3000]
+            raise ExternalAPIError(f"Failed to generate final summary: {str(e)}")

@@ -21,7 +21,6 @@ from utils.llm_agent import create_agent
 
 from .models import ComposedEmail
 from .prompts import SYSTEM_PROMPT, create_composition_prompt
-from .utils import validate_email, clean_email_formatting
 from .db_utils import write_email_to_db, increment_user_generation_count
 
 
@@ -161,7 +160,7 @@ class EmailComposerStep(BasePipelineStep):
             logfire.info(
                 "Email written to database",
                 email_id=str(email_id),
-                word_count=composed_email.validation_result.word_count
+                word_count=len(composed_email.email_content.split())
             )
 
             # Step 5: Increment user generation count (non-critical)
@@ -172,9 +171,7 @@ class EmailComposerStep(BasePipelineStep):
 
             pipeline_data.composition_metadata = {
                 "email_id": str(email_id),
-                "word_count": composed_email.validation_result.word_count,
-                "mentions_publications": composed_email.validation_result.mentions_publications,
-                "validation_warnings": composed_email.validation_result.warnings,
+                "word_count": len(composed_email.email_content.split()),
                 "model": self.model,
                 "temperature": self.temperature,
                 **composed_email.generation_metadata
@@ -189,9 +186,7 @@ class EmailComposerStep(BasePipelineStep):
                 step_name=self.step_name,
                 metadata={
                     "email_id": str(email_id),
-                    "word_count": composed_email.validation_result.word_count,
-                    "mentions_publications": composed_email.validation_result.mentions_publications,
-                    "warnings": composed_email.validation_result.warnings
+                    "word_count": len(composed_email.email_content.split()),
                 }
             )
 
@@ -215,15 +210,7 @@ class EmailComposerStep(BasePipelineStep):
         template_type: 'TemplateType'
     ) -> Optional[ComposedEmail]:
         """
-        Generate email with validation and retry logic.
-
-        Args:
-            user_prompt: Formatted prompt for Claude
-            recipient_name: Recipient name for validation
-            template_type: Type of template (RESEARCH, BOOK, or GENERAL)
-
-        Returns:
-            ComposedEmail if successful, None if all retries failed
+        Generate email with retry logic (no additional validation).
         """
         for attempt in range(self.max_retries + 1):
             try:
@@ -233,99 +220,40 @@ class EmailComposerStep(BasePipelineStep):
                     max_attempts=self.max_retries + 1
                 )
 
-                # Call pydantic-ai agent for email generation
-                # Agent automatically logs to Logfire (prompt, response, tokens, cost, latency)
+                # Generate email via LLM
                 result = await self.composition_agent.run(user_prompt)
-                raw_email = result.output.strip()
-
-                # Clean formatting
-                cleaned_email = clean_email_formatting(raw_email)
+                email_text = result.output.strip()
 
                 logfire.info(
                     "Email generated",
                     attempt=attempt + 1,
-                    word_count=len(cleaned_email.split()),
-                    length=len(cleaned_email)
+                    word_count=len(email_text.split()),
+                    length=len(email_text)
                 )
 
-                # Validate email
-                validation_result = validate_email(
-                    email_content=cleaned_email,
-                    recipient_name=recipient_name,
-                    template_type=template_type
+                composed_email = ComposedEmail(
+                    email_content=email_text,
+                    generation_metadata={
+                        "attempts": attempt + 1,
+                        "model": self.model,
+                    },
                 )
 
-                # Check if valid
-                if validation_result.is_valid:
-                    logfire.info(
-                        "Email validation passed",
-                        attempt=attempt + 1,
-                        warnings_count=len(validation_result.warnings)
-                    )
-
-                    # Build ComposedEmail
-                    # Note: Token counts are automatically logged to Logfire by pydantic-ai
-                    composed_email = ComposedEmail(
-                        email_content=cleaned_email,
-                        validation_result=validation_result,
-                        generation_metadata={
-                            "attempts": attempt + 1,
-                            "model": self.model
-                        }
-                    )
-
-                    return composed_email
-
-                else:
-                    # Validation failed
-                    logfire.warning(
-                        "Email validation failed",
-                        attempt=attempt + 1,
-                        issues=validation_result.issues,
-                        warnings=validation_result.warnings
-                    )
-
-                    # Retry if attempts remain
-                    if attempt < self.max_retries:
-                        logfire.info(
-                            "Retrying email generation",
-                            remaining_attempts=self.max_retries - attempt
-                        )
-                        continue
-                    else:
-                        # No more retries - return last attempt anyway
-                        logfire.error(
-                            "All validation attempts failed - using last attempt",
-                            issues=validation_result.issues
-                        )
-
-                        # Return despite validation failure
-                        # Note: Token usage is already logged by pydantic-ai
-                        composed_email = ComposedEmail(
-                            email_content=cleaned_email,
-                            validation_result=validation_result,
-                            generation_metadata={
-                                "attempts": attempt + 1,
-                                "validation_failed": True
-                            }
-                        )
-
-                        return composed_email
+                return composed_email
 
             except Exception as e:
                 logfire.error(
                     "Error during email generation attempt",
                     attempt=attempt + 1,
                     error=str(e),
-                    error_type=type(e).__name__
+                    error_type=type(e).__name__,
                 )
 
                 # Retry if attempts remain
                 if attempt < self.max_retries:
                     continue
                 else:
-                    # All attempts failed
                     return None
 
-        # Should not reach here, but return None as fallback
+        # All attempts failed
         return None

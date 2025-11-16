@@ -8,6 +8,12 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
+class Summary(BaseModel):
+    """LLM summary output."""
+
+    summary: str = Field(description="Summarized content")
+
+
 class ScrapedPage(BaseModel):
     """Single scraped webpage."""
 

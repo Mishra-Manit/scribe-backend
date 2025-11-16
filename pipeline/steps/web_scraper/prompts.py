@@ -31,6 +31,7 @@ SOURCE VERIFICATION:
 - Prefer information that appears consistently across multiple URLs
 
 OUTPUT REQUIREMENTS:
+- Return as a Summary object with a 'summary' field containing your markdown-formatted text
 - Maximum 3000 characters (strict limit)
 - Use clear, structured format with sections
 - Be concise but comprehensive - every sentence should add value for email personalization
@@ -156,6 +157,7 @@ CRITICAL RULES:
 7. Remove website boilerplate (navigation, footers, cookie notices)
 
 OUTPUT REQUIREMENTS:
+- Return as a Summary object with a 'summary' field containing your markdown-formatted extraction
 - Maximum 4000 characters per batch
 - Use clear bullet points or structured format
 - For each fact, include [PAGE X] marker to indicate source
@@ -243,6 +245,7 @@ ANTI-HALLUCINATION SAFEGUARDS:
 ✓ When dates are approximate in sources, preserve that uncertainty
 
 QUALITY REQUIREMENTS:
+- Return as a Summary object with a 'summary' field containing your final synthesized markdown
 - Maximum 3000 characters (strict limit)
 - Prioritize quality over quantity - be selective
 - Focus on concrete facts: specific papers, clear positions, explicit research areas

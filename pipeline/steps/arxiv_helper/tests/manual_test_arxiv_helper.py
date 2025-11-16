@@ -18,6 +18,7 @@ NOTE: Requires internet connection for ArXiv API access
 """
 
 import asyncio
+import os
 import sys
 import json
 from datetime import datetime
@@ -40,10 +41,12 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Import logfire and configure
+# Import logfire
 import logfire
 
-# Import pipeline components
+# Import pipeline components and config
+from config.settings import settings
+from observability.logfire_config import LogfireConfig
 from pipeline.steps.arxiv_helper.main import ArxivHelperStep
 from pipeline.models.core import PipelineData, TemplateType
 
@@ -547,6 +550,15 @@ def main():
     print("║" + " " * 78 + "║")
     print("╚" + "=" * 78 + "╝")
     print()
+
+    # Initialize Logfire for observability (optional but recommended)
+    if settings.logfire_token:
+        LogfireConfig.initialize(token=settings.logfire_token)
+        print("✓ Logfire observability enabled - spans will be sent to remote server\n")
+    else:
+        # Suppress warnings if no token is available
+        os.environ['LOGFIRE_IGNORE_NO_CONFIG'] = '1'
+        print("⚠ Logfire token not set - observability disabled (no remote logging)\n")
 
     logger.info("Starting manual test execution")
     logfire.info("Manual test script started", script_name=__file__)

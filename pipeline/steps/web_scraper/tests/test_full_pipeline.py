@@ -14,10 +14,12 @@ Or from project root:
 """
 
 import asyncio
+import os
 from uuid import uuid4
 from datetime import datetime
 
 from config.settings import settings
+from observability.logfire_config import LogfireConfig
 
 # Import pipeline components
 from pipeline.steps.web_scraper.main import WebScraperStep
@@ -214,6 +216,43 @@ async def run_real_web_scraper_demo():
         print(f"Preview: {content[:200]}...")
 
     # ============================================================================
+    # STEP 12: Batch Summaries
+    # ============================================================================
+    print_subsection("Batch-Level Summaries")
+
+    if pipeline_data.scraped_page_contents:
+        # Re-combine scraped page contents for batch processing
+        combined_content = "\n".join(pipeline_data.scraped_page_contents.values())
+
+        # Split content into chunks based on scraper configuration
+        chunks = scraper._split_into_chunks(combined_content, scraper.chunk_size)
+        total_batches = len(chunks)
+
+        for idx, chunk in enumerate(chunks, start=1):
+            batch_summary = await scraper._summarize_batch(
+                batch_content=chunk,
+                batch_number=idx,
+                total_batches=total_batches,
+                recipient_name=pipeline_data.recipient_name,
+            )
+            # Pretty print batch summary with clear delimiters
+            print("\n" + "=" * 80)
+            print(f"=== BATCH {idx}/{total_batches} SUMMARY ===")
+            print("=" * 80 + "\n")
+            print(batch_summary.strip() + "\n")
+            print("=" * 80)
+            print(f"=== END BATCH {idx} ===")
+            print("=" * 80 + "\n")
+    else:
+        print("  (No scraped content available for batch summarization)")
+
+    # ============================================================================
+    # STEP 13: Final Summarization
+    # ============================================================================
+    print_subsection("Final LLM Summary")
+    print(pipeline_data.scraped_content)
+
+    # ============================================================================
     # Summary
     # ============================================================================
 
@@ -256,6 +295,16 @@ if __name__ == "__main__":
         exit(1)
 
     print("\n✓ All required environment variables are set")
+
+    # Initialize Logfire for observability (optional but recommended)
+    if settings.logfire_token:
+        LogfireConfig.initialize(token=settings.logfire_token)
+        print("✓ Logfire observability enabled - spans will be sent to remote server")
+    else:
+        # Suppress warnings if no token is available
+        os.environ['LOGFIRE_IGNORE_NO_CONFIG'] = '1'
+        print("⚠ Logfire token not set - observability disabled (no remote logging)")
+
     print("✓ Starting demonstration...\n")
 
     # Run the async demo

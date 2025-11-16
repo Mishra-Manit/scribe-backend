@@ -44,13 +44,6 @@ class ArxivPaper(BaseModel):
         description="Primary ArXiv category (e.g., 'cs.AI')"
     )
 
-    relevance_score: float = Field(
-        description="Relevance score (0-1, higher is more relevant)",
-        ge=0.0,
-        le=1.0,
-        default=0.0
-    )
-
     @property
     def year(self) -> int:
         """Extract year from published_date"""
@@ -65,32 +58,8 @@ class ArxivPaper(BaseModel):
         """Convert to dict for PipelineData.arxiv_papers"""
         return {
             "title": self.title,
-            "abstract": self.abstract[:500],  # Truncate for brevity
+            "abstract": self.abstract,
             "authors": self.authors,
-            "year": self.year,
-            "url": self.arxiv_url,
-            "relevance_score": self.relevance_score
+            "published_date": self.published_date.isoformat(),
+            "arxiv_url": self.arxiv_url
         }
-
-
-class ArxivSearchResult(BaseModel):
-    """Complete result from ArXiv search."""
-
-    papers_found: List[ArxivPaper] = Field(
-        description="All papers found",
-        default_factory=list
-    )
-
-    papers_filtered: List[ArxivPaper] = Field(
-        description="Papers after relevance filtering (top 5)",
-        default_factory=list
-    )
-
-    search_query: str = Field(
-        description="Query used for ArXiv search"
-    )
-
-    total_results: int = Field(
-        description="Total results from ArXiv API",
-        ge=0
-    )
