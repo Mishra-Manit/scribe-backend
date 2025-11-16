@@ -6,6 +6,9 @@ Loads and validates environment variables with type safety.
 from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import logfire
+
+logfire.configure()
 
 
 class Settings(BaseSettings):

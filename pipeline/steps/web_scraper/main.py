@@ -3,7 +3,7 @@ Web Scraper Step - Phase 5 Step 2
 
 Performs web scraping using search terms from Step 1:
 - Google Custom Search API to find URLs
-- Async scraping with BeautifulSoup
+- Async scraping with Playwright (headless browser)
 - Content cleaning and summarization
 - Updates PipelineData with results
 """
@@ -49,20 +49,26 @@ class WebScraperStep(BasePipelineStep):
         self.google_client = GoogleSearchClient()
 
         # Create pydantic-ai agent for content summarization
-        # Using Sonnet for high-quality summarization
+        # Using Haiku 4.5 for fast, cost-effective fact extraction
+        # Low temperature for factual, grounded output (anti-hallucination)
         self.summarization_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
             system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
-            temperature=0.1,
-            max_tokens=3000,
+            temperature=0.0,  # Zero temperature for maximum factual accuracy
+            max_tokens=2000,  # Reduced to match 3000 char limit (~2k tokens)
             retries=2
         )
 
         # Configuration
-        self.results_per_query = 6
-        self.max_pages_to_scrape = 10
+        self.results_per_query = 3
+        self.max_pages_to_scrape = 5
         self.scrape_timeout = 10.0
-        self.max_concurrent_scrapes = 5
+        self.max_concurrent_scrapes = 2  # Depends on celerk workers RAM
+
+        # Batch summarization configuration
+        self.batch_chunk_size = 10000  # Characters per batch
+        self.batch_max_output_chars = 4000  # Max chars per batch summary
+        self.final_max_output_chars = 3000  # Max chars for final summary
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
         """
@@ -111,6 +117,7 @@ class WebScraperStep(BasePipelineStep):
             if not search_results:
                 logfire.warning("No search results found")
                 pipeline_data.scraped_content = "No search results found."
+                pipeline_data.scraped_page_contents = {}
                 pipeline_data.scraped_urls = []
                 pipeline_data.scraping_metadata = {
                     "total_attempts": 0,
@@ -161,6 +168,7 @@ class WebScraperStep(BasePipelineStep):
 
             if not scraped_pages:
                 pipeline_data.scraped_content = "Failed to scrape any content."
+                pipeline_data.scraped_page_contents = {}
                 pipeline_data.scraped_urls = []
                 pipeline_data.scraping_metadata = scraping_result.model_dump()
 
@@ -174,26 +182,37 @@ class WebScraperStep(BasePipelineStep):
             # Step 4: Combine and summarize content
             combined_content = self._combine_scraped_content(scraped_pages)
 
-            # If too long, summarize with LLM
-            if len(combined_content) > 15000:
-                logfire.info(
-                    "Content too long, summarizing with LLM",
-                    original_length=len(combined_content)
-                )
+            # ALWAYS summarize with LLM for:
+            # 1. Anti-hallucination fact checking
+            # 2. Content filtering (removes boilerplate, duplicates)
+            # 3. Context optimization for email generation
+            # 4. Structured output format
+            logfire.info(
+                "Summarizing content with LLM for fact verification",
+                original_length=len(combined_content),
+                num_pages=len(scraped_pages)
+            )
 
-                final_content = await self._summarize_content(
-                    content=combined_content,
-                    recipient_name=pipeline_data.recipient_name,
-                    recipient_interest=pipeline_data.recipient_interest,
-                    template_type=pipeline_data.template_type
+            final_content = await self._summarize_content(
+                content=combined_content,
+                recipient_name=pipeline_data.recipient_name,
+                recipient_interest=pipeline_data.recipient_interest,
+                template_type=pipeline_data.template_type
+            )
+
+            # Check for uncertainty markers in the summary
+            has_uncertainty = "[UNCERTAIN]" in final_content or "[SINGLE SOURCE]" in final_content
+            if has_uncertainty:
+                logfire.warning(
+                    "Summary contains uncertainty markers",
+                    has_uncertain=("[UNCERTAIN]" in final_content),
+                    has_single_source=("[SINGLE SOURCE]" in final_content)
                 )
-            else:
-                # Content is reasonable length - use as is (with truncation)
-                final_content = combined_content[:5000]
 
             # Step 5: Update PipelineData
             pipeline_data.scraped_content = final_content
             pipeline_data.scraped_urls = [page.url for page in scraped_pages]
+            pipeline_data.scraped_page_contents = {page.url: page.content for page in scraped_pages}
             pipeline_data.scraping_metadata = {
                 "total_attempts": scraping_result.total_attempts,
                 "successful_scrapes": len(scraped_pages),
@@ -201,7 +220,8 @@ class WebScraperStep(BasePipelineStep):
                 "success_rate": scraping_result.success_rate,
                 "total_content_length": scraping_result.total_content_length,
                 "final_content_length": len(final_content),
-                "was_summarized": len(combined_content) > 15000
+                "was_summarized": True,
+                "has_uncertainty_markers": has_uncertainty
             }
 
             # Return success
@@ -233,7 +253,7 @@ class WebScraperStep(BasePipelineStep):
         urls: List[str]
     ) -> List[ScrapedPage]:
         """
-        Scrape multiple URLs concurrently with semaphore.
+        Scrape multiple URLs concurrently with semaphore using Playwright.
 
         Args:
             urls: List of URLs to scrape
@@ -241,58 +261,225 @@ class WebScraperStep(BasePipelineStep):
         Returns:
             List of successfully scraped pages
         """
-        # Create semaphore for concurrency control
-        semaphore = asyncio.Semaphore(self.max_concurrent_scrapes)
+        from playwright.async_api import async_playwright
+        import time
 
-        async def scrape_with_semaphore(url: str) -> Optional[ScrapedPage]:
-            async with semaphore:
-                import time
-                start = time.time()
+        # Launch persistent browser for all scrapes
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox']  # Required for containers/serverless
+            )
 
-                title, content = await scrape_url(url, timeout=self.scrape_timeout)
+            try:
+                # Create semaphore for concurrency control
+                semaphore = asyncio.Semaphore(self.max_concurrent_scrapes)
 
-                if content:
-                    return ScrapedPage(
-                        url=url,
-                        title=title,
-                        content=content,
-                        word_count=len(content.split()),
-                        scrape_time_seconds=time.time() - start
-                    )
-                return None
+                async def scrape_with_semaphore(url: str) -> Optional[ScrapedPage]:
+                    async with semaphore:
+                        start = time.time()
 
-        # Scrape all URLs
-        tasks = [scrape_with_semaphore(url) for url in urls]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        # Pass browser to scrape_url (creates new context per URL)
+                        title, content = await scrape_url(
+                            url,
+                            browser,
+                            timeout=self.scrape_timeout
+                        )
 
-        # Filter successful results
-        scraped_pages = [
-            result for result in results
-            if isinstance(result, ScrapedPage)
-        ]
+                        if content:
+                            return ScrapedPage(
+                                url=url,
+                                title=title,
+                                content=content,
+                                word_count=len(content.split()),
+                                scrape_time_seconds=time.time() - start
+                            )
+                        return None
 
-        return scraped_pages
+                # Scrape all URLs
+                tasks = [scrape_with_semaphore(url) for url in urls]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Filter successful results
+                scraped_pages = [
+                    result for result in results
+                    if isinstance(result, ScrapedPage)
+                ]
+
+                return scraped_pages
+
+            finally:
+                # Always close browser
+                await browser.close()
 
     def _combine_scraped_content(self, pages: List[ScrapedPage]) -> str:
         """
-        Combine content from multiple pages.
+        Combine content from multiple pages with clear page markers.
+
+        Each page is wrapped with delimiters for batch processing:
+        - Start marker: === PAGE {index}: {url} ===
+        - End marker: === END PAGE {index} ===
+
+        This allows batch summarization to maintain source attribution.
 
         Args:
             pages: List of scraped pages
 
         Returns:
-            Combined content string
+            Combined content string with page markers
         """
         combined = ""
 
-        for page in pages:
-            combined += f"URL: {page.url}\n"
+        for idx, page in enumerate(pages, start=1):
+            # Start marker
+            combined += f"{'=' * 80}\n"
+            combined += f"=== PAGE {idx}: {page.url} ===\n"
+            combined += f"{'=' * 80}\n\n"
+
+            # Page title (if exists)
             if page.title:
-                combined += f"Title: {page.title}\n"
-            combined += f"\n{page.content}\n\n"
-            combined += "#" * 100 + "\n\n"
+                combined += f"Title: {page.title}\n\n"
+
+            # Page content
+            combined += f"{page.content}\n\n"
+
+            # End marker
+            combined += f"{'=' * 80}\n"
+            combined += f"=== END PAGE {idx} ===\n"
+            combined += f"{'=' * 80}\n\n\n"
 
         return combined
+
+    def _split_into_chunks(self, content: str, chunk_size: int = 30000) -> List[str]:
+        """
+        Split content into chunks without breaking mid-sentence.
+
+        Algorithm:
+        1. Try to split at chunk_size
+        2. Look backward up to 500 chars for sentence boundary (., !, ?, or \n\n)
+        3. If no boundary found, split at word boundary
+        4. If still no boundary, hard split at chunk_size
+
+        Args:
+            content: Full combined text
+            chunk_size: Target chunk size in characters (default 30000)
+
+        Returns:
+            List of content chunks, each ≤ chunk_size characters
+        """
+        if len(content) <= chunk_size:
+            return [content]
+
+        chunks = []
+        position = 0
+        content_length = len(content)
+
+        while position < content_length:
+            # Determine end of this chunk
+            end_position = min(position + chunk_size, content_length)
+
+            # If this is the last chunk, take everything
+            if end_position >= content_length:
+                chunks.append(content[position:])
+                break
+
+            # Look backward for sentence boundary (up to 500 chars)
+            search_start = max(position, end_position - 500)
+            chunk_text = content[search_start:end_position]
+
+            # Try to find sentence boundaries (in order of preference)
+            sentence_endings = ['\n\n', '. ', '.\n', '! ', '!\n', '? ', '?\n']
+            best_split = -1
+
+            for ending in sentence_endings:
+                idx = chunk_text.rfind(ending)
+                if idx != -1:
+                    # Convert local index to global index
+                    best_split = search_start + idx + len(ending)
+                    break
+
+            # If no sentence boundary, try word boundary
+            if best_split == -1:
+                last_space = chunk_text.rfind(' ')
+                if last_space != -1:
+                    best_split = search_start + last_space + 1
+
+            # If still no boundary, hard split at chunk_size
+            if best_split == -1:
+                best_split = end_position
+
+            # Extract chunk and update position
+            chunks.append(content[position:best_split].strip())
+            position = best_split
+
+        return chunks
+
+    async def _summarize_batch(
+        self,
+        batch_content: str,
+        batch_number: int,
+        total_batches: int,
+        recipient_name: str
+    ) -> str:
+        """
+        Summarize a single content batch using Haiku.
+
+        This is an intermediate extraction step - focuses on completeness
+        over conciseness. The final summary will filter and synthesize.
+
+        Args:
+            batch_content: Content chunk to summarize
+            batch_number: Current batch index (1-based)
+            total_batches: Total number of batches
+            recipient_name: Professor name
+
+        Returns:
+            Batch summary (max 4000 chars)
+        """
+        from .prompts import BATCH_SUMMARIZATION_SYSTEM_PROMPT, create_batch_summarization_prompt
+
+        # Create batch-specific agent (ephemeral)
+        batch_agent = create_agent(
+            model="anthropic:claude-haiku-4-5",
+            system_prompt=BATCH_SUMMARIZATION_SYSTEM_PROMPT,
+            temperature=0.0,  # Deterministic extraction
+            max_tokens=3000,  # ~4000 chars
+            retries=2
+        )
+
+        user_prompt = create_batch_summarization_prompt(
+            batch_content=batch_content,
+            batch_number=batch_number,
+            total_batches=total_batches,
+            recipient_name=recipient_name
+        )
+
+        try:
+            result = await batch_agent.run(user_prompt)
+            summary = result.output
+
+            logfire.info(
+                "Batch summarized",
+                batch_number=batch_number,
+                total_batches=total_batches,
+                input_length=len(batch_content),
+                output_length=len(summary)
+            )
+
+            return summary[:4000]  # Enforce limit
+
+        except Exception as e:
+            logfire.error(
+                "Batch summarization failed",
+                batch_number=batch_number,
+                error=str(e)
+            )
+            # Fallback: truncate raw content
+            logfire.warning(
+                "Using truncated raw content for batch",
+                batch_number=batch_number
+            )
+            return batch_content[:4000]
 
     async def _summarize_content(
         self,
@@ -302,39 +489,143 @@ class WebScraperStep(BasePipelineStep):
         template_type: 'TemplateType'
     ) -> str:
         """
-        Summarize content using pydantic-ai agent.
+        Two-tier summarization with batch processing and final synthesis.
+
+        Architecture:
+        1. Split content into 30K-char chunks
+        2. Summarize each batch independently (extraction focus)
+        3. Combine batch summaries
+        4. Final synthesis with COT and anti-hallucination logic
 
         Args:
-            content: Combined scraped content
+            content: Combined scraped content (all pages)
             recipient_name: Professor name
             recipient_interest: Research area
-            template_type: Type of template (RESEARCH, BOOK, or GENERAL)
+            template_type: Template type (RESEARCH, BOOK, GENERAL)
 
         Returns:
-            Summarized content (max 5000 chars)
+            Final synthesized summary (max 3000 chars)
         """
-        user_prompt = create_summarization_prompt(
-            scraped_content=content,
-            recipient_name=recipient_name,
-            recipient_interest=recipient_interest,
-            template_type=template_type
-        )
+        from .prompts import FINAL_SUMMARY_SYSTEM_PROMPT, create_final_summary_prompt
 
-        try:
-            # Use pydantic-ai agent for summarization
-            # Agent automatically logs to Logfire (prompt, response, tokens, cost, latency)
-            result = await self.summarization_agent.run(user_prompt)
-            summary = result.output
-
+        # Edge case: Content fits in single batch (skip batch layer)
+        if len(content) <= 30000:
             logfire.info(
-                "Content summarized successfully",
-                original_length=len(content),
-                summary_length=len(summary)
+                "Content fits in single batch, using direct summarization",
+                content_length=len(content)
             )
 
-            return summary[:5000]  # Enforce limit
+            # Use existing single-pass logic
+            user_prompt = create_summarization_prompt(
+                scraped_content=content,
+                recipient_name=recipient_name,
+                recipient_interest=recipient_interest,
+                template_type=template_type
+            )
 
-        except Exception as e:
-            logfire.error("Failed to summarize content", error=str(e))
-            # Fallback: truncate original content
-            return content[:5000]
+            # Wrap agent run in span for observability consistency
+            with logfire.span(
+                "Direct Summarization",
+                content_length=len(content),
+                template_type=template_type.value
+            ):
+                try:
+                    result = await self.summarization_agent.run(user_prompt)
+                    summary = result.output
+
+                    logfire.info(
+                        "Direct summarization completed",
+                        original_length=len(content),
+                        summary_length=len(summary)
+                    )
+
+                    return summary[:3000]
+
+                except Exception as e:
+                    logfire.error("Direct summarization failed", error=str(e))
+                    return content[:3000]
+
+        # Main flow: Multi-batch processing
+        chunks = self._split_into_chunks(content, chunk_size=30000)
+        total_batches = len(chunks)
+
+        logfire.info(
+            "Starting batch summarization",
+            total_content_length=len(content),
+            num_batches=total_batches,
+            avg_batch_size=len(content) // total_batches
+        )
+
+        # Step 1: Batch Summarizations (under logfire span)
+        batch_summaries = []
+
+        with logfire.span(
+            "Batch Summarizations",
+            total_batches=total_batches,
+            content_length=len(content)
+        ):
+            for idx, chunk in enumerate(chunks, start=1):
+                batch_summary = await self._summarize_batch(
+                    batch_content=chunk,
+                    batch_number=idx,
+                    total_batches=total_batches,
+                    recipient_name=recipient_name
+                )
+                batch_summaries.append(batch_summary)
+
+        # Step 2: Combine batch summaries with markers
+        tiered_summarizations = ""
+        for idx, summary in enumerate(batch_summaries, start=1):
+            tiered_summarizations += f"{'=' * 80}\n"
+            tiered_summarizations += f"=== BATCH {idx} SUMMARY ===\n"
+            tiered_summarizations += f"{'=' * 80}\n\n"
+            tiered_summarizations += f"{summary}\n\n"
+            tiered_summarizations += f"{'=' * 80}\n"
+            tiered_summarizations += f"=== END BATCH {idx} ===\n"
+            tiered_summarizations += f"{'=' * 80}\n\n\n"
+
+        logfire.info(
+            "Batch summaries combined",
+            num_batches=len(batch_summaries),
+            combined_length=len(tiered_summarizations)
+        )
+
+        # Step 3: Final Summary Agent (with COT)
+        with logfire.span(
+            "Final Summary Agent",
+            num_batches=len(batch_summaries),
+            template_type=template_type.value
+        ):
+            # Create final summary agent (using Sonnet for higher quality)
+            final_agent = create_agent(
+                model="anthropic:claude-sonnet-4-5-20250929",
+                system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
+                temperature=0.2,  # Slight creativity for synthesis while staying factual
+                max_tokens=2500,  # ~3000 chars
+                retries=2
+            )
+
+            final_prompt = create_final_summary_prompt(
+                batch_summaries=tiered_summarizations,
+                recipient_name=recipient_name,
+                recipient_interest=recipient_interest,
+                template_type=template_type
+            )
+
+            try:
+                result = await final_agent.run(final_prompt)
+                final_summary = result.output
+
+                logfire.info(
+                    "Final summary completed",
+                    batches_processed=len(batch_summaries),
+                    final_length=len(final_summary)
+                )
+
+                return final_summary[:3000]
+
+            except Exception as e:
+                logfire.error("Final summary generation failed", error=str(e))
+                # Fallback: use first batch summary (better than nothing)
+                logfire.warning("Using first batch summary as fallback")
+                return batch_summaries[0][:3000] if batch_summaries else content[:3000]

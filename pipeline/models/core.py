@@ -114,6 +114,9 @@ class PipelineData:
     scraped_urls: List[str] = field(default_factory=list)
     """URLs that were successfully scraped"""
 
+    scraped_page_contents: Dict[str, str] = field(default_factory=dict)
+    """Mapping of URL -> raw cleaned content (per page)."""
+
     scraping_metadata: Dict[str, Any] = field(default_factory=dict)
     """
     Scraping stats: total_urls_tried, successful_scrapes, failed_urls

@@ -6,33 +6,71 @@ Web scraping functions migrated from api/legacy/app.py with improvements:
 - Better HTML cleaning
 - Timeout handling
 - Content validation
+
+Scraping implementations:
+- scrape_url: Playwright-based (headless browser) - primary implementation
 """
 
 import re
-import httpx
 import logfire
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Comment
+from playwright.async_api import Browser
 from typing import Optional, Tuple
+
+def clean_text(html: str) -> str:
+    """Normalize HTML into readable plain text."""
+    if not html:
+        return ""
+
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Drop non-content elements
+    for element in soup(["script", "style", "noscript", "template", "svg"]):
+        element.decompose()
+
+    # Remove inline comments to avoid boilerplate
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+
+    text = soup.get_text(separator="\n")
+
+    # Split into lines, trim whitespace, and discard empties
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    cleaned_text = "\n".join(lines)
+
+    # Remove non-ASCII characters
+    cleaned_text = re.sub(r"[^\x00-\x7F]+", "", cleaned_text)
+
+    # Collapse multiple spaces
+    cleaned_text = re.sub(r"[ \t]+", " ", cleaned_text)
+
+    # Collapse multiple newlines
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
+
+    return cleaned_text.strip()
 
 
 async def scrape_url(
     url: str,
+    browser: Browser,
     timeout: float = 10.0,
     max_content_length: int = 500000  # 500KB limit
 ) -> Tuple[Optional[str], Optional[str]]:
     """
-    Scrape text content from a URL.
+    Scrape text content from a URL using Playwright (headless browser).
 
     Args:
         url: URL to scrape
-        timeout: Request timeout in seconds
-        max_content_length: Max response size in bytes
+        browser: Playwright Browser instance (persistent across calls)
+        timeout: Page load timeout in seconds
+        max_content_length: Max content size (unused but kept for compatibility)
 
     Returns:
         Tuple of (title, content) or (None, None) if failed
 
     Note:
         Returns None for both on failure (no exceptions raised)
+        Creates a new BrowserContext per URL for isolation
     """
     # Skip non-HTML files
     if url.endswith(('.pdf', '.doc', '.docx', '.ppt', '.pptx')):
@@ -50,105 +88,70 @@ async def scrape_url(
         logfire.info("Skipping blocked domain (video/media platform)", url=url)
         return None, None
 
+    context = None
+    page = None
+
     try:
-        # User agent to avoid bot blocking
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        # Create new browser context for isolation (cookies, storage, etc.)
+        context = await browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        )
 
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            follow_redirects=True,
-            limits=httpx.Limits(max_connections=10)
-        ) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
+        # Create page within context
+        page = await context.new_page()
 
-            # Check content type
-            content_type = response.headers.get('content-type', '').lower()
-            if 'html' not in content_type:
-                logfire.info("Non-HTML content type, skipping", url=url, content_type=content_type)
-                return None, None
+        # Navigate to URL with timeout
+        response = await page.goto(
+            url,
+            wait_until='domcontentloaded',
+            timeout=int(timeout * 1000)  # Convert to milliseconds
+        )
 
-            # Check size
-            if len(response.content) > max_content_length:
-                logfire.warning("Response too large, skipping", url=url, size=len(response.content))
-                return None, None
+        # Check response status
+        if not response or response.status >= 400:
+            logfire.warning("HTTP error scraping URL", url=url, status=response.status if response else "no response")
+            return None, None
 
-            # Parse HTML
-            soup = BeautifulSoup(response.content, "html.parser")
+        # Wait for network to be idle (all content loaded)
+        await page.wait_for_load_state('networkidle', timeout=int(timeout * 1000))
 
-            # Extract title
+        # Extract title
+        title = await page.title()
+        if not title:
             title = None
-            title_tag = soup.find('title')
-            if title_tag:
-                title = title_tag.get_text().strip()
 
-            # Remove script and style elements
-            for script in soup(["script", "style", "meta", "link", "noscript"]):
-                script.decompose()
+        # Extract HTML and clean to normalized text
+        html_content = await page.content()
+        cleaned = clean_text(html_content)
 
-            # Get text
-            text = soup.get_text()
-
-            # Clean text
-            cleaned = clean_text(text)
-
-            if not cleaned or len(cleaned) < 100:
-                logfire.info("Insufficient content after cleaning", url=url)
-                return None, None
-
+        if max_content_length and len(cleaned) > max_content_length:
             logfire.info(
-                "Successfully scraped URL",
+                "Truncating content due to max_content_length",
                 url=url,
-                content_length=len(cleaned),
-                word_count=len(cleaned.split())
+                original_length=len(cleaned),
+                max_content_length=max_content_length
             )
+            cleaned = cleaned[:max_content_length]
 
-            return title, cleaned
+        if not cleaned or len(cleaned) < 100:
+            logfire.info("Insufficient content after cleaning", url=url)
+            return None, None
 
-    except httpx.HTTPStatusError as e:
-        logfire.warning("HTTP error scraping URL", url=url, status=e.response.status_code)
-        return None, None
-    except httpx.TimeoutException:
-        logfire.warning("Timeout scraping URL", url=url)
-        return None, None
+        logfire.info(
+            "Successfully scraped URL with Playwright",
+            url=url,
+            content_length=len(cleaned),
+            word_count=len(cleaned.split())
+        )
+
+        return title, cleaned
+
     except Exception as e:
-        logfire.warning("Error scraping URL", url=url, error=str(e))
+        # Catch all errors: TimeoutError, network errors, etc.
+        logfire.warning("Error scraping URL with Playwright", url=url, error=str(e))
         return None, None
 
-
-def clean_text(text: str) -> str:
-    """
-    Clean scraped HTML text.
-
-    Migrated from legacy cleanText() function.
-
-    Args:
-        text: Raw text from HTML
-
-    Returns:
-        Cleaned text
-    """
-    # Split into lines
-    lines = text.splitlines()
-
-    # Filter English lines (has letters and spaces)
-    cleaned_lines = [
-        line.strip()
-        for line in lines
-    ]
-
-    # Join lines
-    cleaned_text = '\n'.join(cleaned_lines)
-
-    # Remove non-ASCII characters
-    cleaned_text = re.sub(r'[^\x00-\x7F]+', '', cleaned_text)
-
-    # Collapse multiple spaces
-    cleaned_text = re.sub(r'[ \t]+', ' ', cleaned_text)
-
-    # Collapse multiple newlines
-    cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
-
-    return cleaned_text.strip()
+    finally:
+        # Always cleanup context (includes closing page)
+        if context:
+            await context.close()

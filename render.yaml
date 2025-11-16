@@ -1,0 +1,27 @@
+# render.yaml
+services:
+  # ----------------- API -----------------
+  - type: web
+    name: scribe-api
+    env: python
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+      # Playwright needs its browsers
+      python -m playwright install --with-deps
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 120
+    envVars:
+      - fromGroup: scribe-backend          # defined below
+
+  # ---------------- Celery worker --------
+  - type: worker
+    name: scribe-celery
+    env: python
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: celery -A celery_config.celery_app worker --loglevel=info
+    envVars:
+      - fromGroup: scribe-backend

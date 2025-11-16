@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Database: Supabase/PostgreSQL with direct connection
 - Authentication: Supabase Auth with JWT validation
 - AI/ML: Anthropic Claude API, OpenAI (legacy)
-- Web Scraping: BeautifulSoup, scholarly, httpx
+- Web Scraping: Playwright (headless browser), scholarly
 
 ## Development Commands
 
@@ -46,6 +46,12 @@ alembic current
 # View migration history
 alembic history --verbose
 ```
+
+**Notes:**
+- Playwright is used for web scraping with JavaScript support
+- Browsers run in headless mode (no GUI)
+- For serverless/container deployments, use `--no-sandbox` flag (already configured)
+- Browser binaries are ~300MB, ensure sufficient disk space
 
 ### Testing
 
