@@ -6,11 +6,6 @@ all pipeline steps in the correct order.
 """
 
 from pipeline.core.runner import PipelineRunner
-from pipeline.steps.template_parser.main import TemplateParserStep
-from pipeline.steps.web_scraper.main import WebScraperStep
-from pipeline.steps.arxiv_helper.main import ArxivHelperStep
-from pipeline.steps.email_composer.main import EmailComposerStep
-
 
 def create_email_pipeline() -> PipelineRunner:
     """
@@ -55,7 +50,12 @@ def create_email_pipeline() -> PipelineRunner:
     runner = PipelineRunner()
 
     # Register steps in execution order
-    # Each step inherits from BasePipelineStep and implements _execute_step()
+    # Import step classes lazily to avoid circular dependencies at package import time
+    from pipeline.steps.template_parser.main import TemplateParserStep
+    from pipeline.steps.web_scraper.main import WebScraperStep
+    from pipeline.steps.arxiv_helper.main import ArxivHelperStep
+    from pipeline.steps.email_composer.main import EmailComposerStep
+
     runner.register_step(TemplateParserStep())
     runner.register_step(WebScraperStep())
     runner.register_step(ArxivHelperStep())

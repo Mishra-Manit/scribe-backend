@@ -61,5 +61,6 @@ class ArxivPaper(BaseModel):
             "abstract": self.abstract,
             "authors": self.authors,
             "published_date": self.published_date.isoformat(),
+            "year": self.year,
             "arxiv_url": self.arxiv_url
         }

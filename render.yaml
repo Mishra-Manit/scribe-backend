@@ -5,14 +5,10 @@ services:
     name: scribe-api
     env: python
     plan: free
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-      # Playwright needs its browsers
-      python -m playwright install --with-deps
+    buildCommand: ./build.sh
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 120
     envVars:
-      - fromGroup: scribe-backend          # defined below
+      - fromGroup: scribe-backend
 
   # ---------------- Celery worker --------
   - type: worker

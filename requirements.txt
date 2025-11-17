@@ -36,8 +36,6 @@ pydantic-ai-slim[anthropic]>=1.18.0,<2.0.0
 requests>=2.31.0,<3.0.0
 httpx[http2]>=0.27.0,<1.0.0
 beautifulsoup4>=4.12.3,<5.0.0
-scholarly[proxy]>=1.7.11,<2.0.0
-free-proxy
 arxiv>=2.0.0,<3.0.0
 playwright>=1.56.0,<2.0.0
 
@@ -51,8 +49,8 @@ kombu>=5.3.0,<6.0.0
 logfire>=4.14.2
 
 # Testing
-pytest>=9.0.1,<10.0.0
-pytest-asyncio>=0.23,<1.0.0
+pytest>=8.2,<9.0.0
+pytest-asyncio>=0.24.0,<1.0.0
 
 # Utilities
 python-dateutil>=2.8.2,<3.0.0

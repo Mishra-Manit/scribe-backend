@@ -22,13 +22,19 @@ class StepExecutionError(PipelineExecutionError):
 
     Attributes:
         step_name: Name of the failed step
-        original_error: The underlying exception
+        original_error: The underlying exception (may be None after deserialization)
+
+    Note: Custom attributes are embedded in the message to survive
+    Celery's JSON serialization. The __reduce__ method has been removed
+    to avoid Celery serialization issues.
     """
 
     def __init__(self, step_name: str, original_error: Exception):
         self.step_name = step_name
         self.original_error = original_error
-        super().__init__(f"Step '{step_name}' failed: {str(original_error)}")
+        # Embed step_name in message for Celery serialization
+        error_message = f"Step '{step_name}' failed: {str(original_error)}"
+        super().__init__(error_message)
 
 
 class ValidationError(PipelineExecutionError):

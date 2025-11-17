@@ -16,7 +16,7 @@ from typing import Optional
 
 from config.settings import settings
 from pipeline.core.runner import BasePipelineStep
-from pipeline.models.core import PipelineData, StepResult
+from pipeline.models.core import PipelineData, StepResult, TemplateType
 from utils.llm_agent import create_agent
 
 from .models import ComposedEmail
@@ -47,10 +47,10 @@ class EmailComposerStep(BasePipelineStep):
         super().__init__(step_name="email_composer")
 
         # Configuration
-        self.model = "anthropic:claude-sonnet-4-5-20250929"
-        self.temperature = 0.7  # Higher for creative writing
+        self.model = "anthropic:claude-sonnet-4-5"
+        self.temperature = 0.7  
         self.max_tokens = 2000
-        self.max_retries = 2  # Total attempts = 3 (initial + 2 retries)
+        self.max_retries = 2 
 
         # Create pydantic-ai agent for email composition
         # Using Sonnet for high-quality, creative email writing
@@ -207,7 +207,7 @@ class EmailComposerStep(BasePipelineStep):
         self,
         user_prompt: str,
         recipient_name: str,
-        template_type: 'TemplateType'
+        template_type: TemplateType
     ) -> Optional[ComposedEmail]:
         """
         Generate email with retry logic (no additional validation).

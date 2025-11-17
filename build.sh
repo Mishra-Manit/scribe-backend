@@ -11,9 +11,9 @@ export PLAYWRIGHT_BROWSERS_PATH="/opt/render/project/.cache/playwright"
 
 # 3. Check if the browser is already cached
 # If the directory doesn't exist, install the browser
-if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH/chromium-1123" ]; then
+if [ ! -d "$PLAYWRIGHT_BROWSERS_PATH/chromium-1194" ]; then
   echo "Browser not found in cache. Installing..."
-  
+
   # Install chromium WITHOUT --with-deps.
   # This relies on Render's base image having the system libraries.
   python -m playwright install chromium

@@ -155,14 +155,17 @@ CRITICAL RULES:
 5. Include uncertainties verbatim (e.g., "approximately", "around", "likely")
 6. DO NOT filter for relevance - extract everything (filtering happens in final summary)
 7. Remove website boilerplate (navigation, footers, cookie notices)
+8. If the content contains no relevant information about the professor, return a summary stating "No relevant information found in this batch."
 
 OUTPUT REQUIREMENTS:
-- Return as a Summary object with a 'summary' field containing your markdown-formatted extraction
+- You MUST call the Summary tool with a 'summary' field containing your markdown-formatted extraction
+- The 'summary' field is REQUIRED and cannot be empty - always provide at least a minimal summary
 - Maximum 4000 characters per batch
 - Use clear bullet points or structured format
 - For each fact, include [PAGE X] marker to indicate source
 - Maintain chronological order when dates are present
 - Include verbatim quotes for key claims (with [PAGE X] attribution)
+- Even if no relevant information is found, you must still call the Summary tool with a summary field
 
 EXAMPLE OUTPUT FORMAT:
 **Publications:**

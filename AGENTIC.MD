@@ -4748,97 +4748,6 @@ class EmailStatusResponse(BaseModel):
     progress: Optional[dict] = None  # Step-by-step progress
 ```
 
----
-
-### 10.4 Environment Variables and Configuration (HIGH PRIORITY)
-
-**Status:** Partial - missing deployment-specific configs
-
-**What exists:**
-- `config/settings.py`: Pydantic Settings class ✅
-- Local `.env` file ✅
-
-**What's missing for Render deployment:**
-- **Redis URL configuration** for Celery broker
-- **Google Custom Search API credentials** (required for Web Scraper)
-- **ArXiv API access** (currently using `arxiv` library, no key needed)
-- **Playwright browser setup** for production (headless Chrome in containers)
-
-**Required Render environment variables:**
-```bash
-# Already set (from current deployment):
-DATABASE_URL=postgresql://...
-SUPABASE_URL=https://...
-SUPABASE_SERVICE_ROLE_KEY=...
-ANTHROPIC_API_KEY=sk-ant-...
-LOGFIRE_TOKEN=...
-
-# MISSING - need to add in Render dashboard:
-CELERY_BROKER_URL=redis://...  # Redis connection string
-CELERY_RESULT_BACKEND=redis://...
-GOOGLE_API_KEY=...  # For Custom Search API
-GOOGLE_CSE_ID=...  # Custom Search Engine ID
-```
-
-**Action items:**
-1. Set up Redis instance on Render (or use external Redis provider like Upstash)
-2. Create Google Custom Search API credentials
-3. Add environment variables to Render dashboard
-4. Update `config/settings.py` to include new variables
-
----
-
-### 10.5 Database Migrations (LOW PRIORITY)
-
-**Status:** Mostly complete
-
-**What exists:**
-- Alembic migrations for `users` and `emails` tables ✅
-- Database connection working ✅
-
-**What might be needed:**
-- **Task status tracking table** (optional - can use Redis instead)
-- Useful for debugging failed tasks and historical tracking
-- Schema:
-  ```sql
-  CREATE TABLE task_status (
-      task_id UUID PRIMARY KEY,
-      user_id UUID REFERENCES users(id),
-      status VARCHAR(20),  -- pending, running, completed, failed
-      created_at TIMESTAMP,
-      updated_at TIMESTAMP,
-      error_message TEXT,
-      email_id UUID REFERENCES emails(id)
-  );
-  ```
-
----
-
-### 10.6 Testing Requirements (MEDIUM PRIORITY)
-
-**Status:** Unit tests exist for some steps, end-to-end tests missing
-
-**What exists:**
-- Unit tests for Template Parser ✅
-- Test fixtures and conftest.py ✅
-- pytest configuration ✅
-
-**What's missing:**
-- **Integration tests** for full pipeline execution
-- **API endpoint tests** for email generation routes
-- **Celery task tests** with mocked external APIs
-- **Load testing** for concurrent email generation
-
-**Priority test cases needed:**
-1. Full pipeline execution (all 4 steps)
-2. API endpoint: POST /api/email/generate
-3. API endpoint: GET /api/email/status/{task_id}
-4. Error handling: Invalid inputs
-5. Error handling: External API failures (Google, ArXiv, Anthropic)
-6. Concurrent task execution (10+ tasks)
-
----
-
 ### 10.7 Playwright Browser Setup for Production (HIGH PRIORITY)
 
 **Status:** Local implementation done, production deployment needs configuration
@@ -4854,30 +4763,10 @@ GOOGLE_CSE_ID=...  # Custom Search Engine ID
 - Render's build process must include: `playwright install chromium`
 - Update `requirements.txt` or add build script
 
-**Dockerfile additions needed:**
-```dockerfile
-# Install Playwright dependencies
-RUN playwright install --with-deps chromium
-
-# Alternative: Use playwright-python slim
-RUN playwright install chromium --with-deps
-```
-
 **Render build command:**
 ```bash
 pip install -r requirements.txt && playwright install chromium
 ```
-
----
-
-### 10.8 Frontend Integration Points (LOW PRIORITY - Backend Focus)
-
-**Status:** Not applicable (backend-only implementation)
-
-**What frontend will need:**
-- API endpoints listed in Section 10.2
-- WebSocket support for real-time progress updates (optional enhancement)
-- Error message handling for failed generations
 
 ---
 
@@ -4924,8 +4813,6 @@ pip install -r requirements.txt && playwright install chromium
 6. **Playwright production config** - 2-3 hours
 7. **Integration testing** - 3-4 hours
 8. **Deployment and smoke testing** - 2-3 hours
-
-**Total estimated time:** 17-25 hours (2-3 full working days)
 
 **Biggest unknowns:**
 - Redis performance on Render (may need external provider like Upstash)

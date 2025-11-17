@@ -62,12 +62,15 @@ class WebScraperStep(BasePipelineStep):
         self.results_per_query = 3
         self.max_pages_to_scrape = 6
         self.scrape_timeout = 10.0
-        self.max_concurrent_scrapes = 2  # Depends on celery workers RAM
+        # MEMORY CONSTRAINED: Render has 512MB RAM, each browser ~150MB
+        # With 2 concurrent browsers, causes OOM. Use sequential scraping.
+        self.max_concurrent_scrapes = 1  # Only 1 browser at a time
 
         # Batch summarization configuration
-        self.chunk_size = 30000  # Characters per chunk (for content splitting)
-        self.batch_max_output_chars = 2000  # Max chars per batch summary
+        self.chunk_size = 8000  # Characters per chunk (for content splitting)
+        self.batch_max_output_chars = 1000  # Max chars per batch summary
         self.final_max_output_chars = 3000  # Max chars for final summary
+        self.max_batches_allowed = 5  # Maximum number of batches allowed for summarization
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
         """
@@ -409,6 +412,15 @@ class WebScraperStep(BasePipelineStep):
             summary_obj: Summary = result.output  # Summary object from pydantic-ai
             summary_text: str = summary_obj.summary  # Extract string field
 
+            # Validate that summary is not empty
+            if not summary_text or not summary_text.strip():
+                logfire.warning(
+                    "Batch summary is empty, using fallback",
+                    batch_number=batch_number,
+                    total_batches=total_batches
+                )
+                summary_text = f"No relevant information extracted from batch {batch_number}."
+
             logfire.info(
                 "Batch summarized",
                 batch_number=batch_number,
@@ -420,14 +432,26 @@ class WebScraperStep(BasePipelineStep):
             return summary_text[:4000]  # Enforce limit
 
         except Exception as e:
+            error_msg = str(e)
             logfire.error(
                 "Batch summarization failed",
                 batch_number=batch_number,
                 total_batches=total_batches,
-                error=str(e)
+                error=error_msg,
+                error_type=type(e).__name__
             )
+
+            # If validation failed due to empty summary, return a fallback
+            if "Field required" in error_msg or "missing" in error_msg.lower():
+                logfire.warning(
+                    "Validation error detected, using fallback summary",
+                    batch_number=batch_number
+                )
+                return f"Batch {batch_number} processed but no structured information could be extracted."
+
+            # For other errors, raise
             raise ExternalAPIError(
-                f"Failed to summarize batch {batch_number}/{total_batches}: {str(e)}"
+                f"Failed to summarize batch {batch_number}/{total_batches}: {error_msg}"
             )
 
     async def _summarize_content(
@@ -500,6 +524,11 @@ class WebScraperStep(BasePipelineStep):
 
         # Main flow: Multi-batch processing
         chunks = self._split_into_chunks(content, chunk_size=self.chunk_size)
+
+        # Enforce maximum number of batches allowed
+        if len(chunks) > self.max_batches_allowed:
+            chunks = chunks[:self.max_batches_allowed]
+
         total_batches = len(chunks)
 
         logfire.info(
@@ -527,6 +556,10 @@ class WebScraperStep(BasePipelineStep):
                 recipient_name=recipient_name
             )
             batch_summaries.append(batch_summary)
+
+            # Add delay between batch API calls to avoid rate limiting (429 errors)
+            if idx < total_batches:
+                await asyncio.sleep(2)
 
         # Step 2: Combine batch summaries with markers
         tiered_summarizations = ""

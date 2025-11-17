@@ -13,7 +13,7 @@ from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
 from observability.logfire_config import LogfireConfig
-from api.routes import user_router
+from api.routes import user_router, email_router
 import logfire
 
 
@@ -133,9 +133,8 @@ async def root() -> Dict[str, str]:
 # User management endpoints (authentication required)
 app.include_router(user_router)
 
-# TODO: Add email generation endpoints
-# TODO: Add email history endpoints
-# TODO: Migrate email generation logic from app.py
+# Email generation endpoints (authentication required, uses Celery workers)
+app.include_router(email_router)
 
 
 if __name__ == "__main__":
