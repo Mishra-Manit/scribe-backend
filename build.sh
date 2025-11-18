@@ -5,4 +5,4 @@ set -o errexit
 # 1. Install your Python dependencies
 pip install -r requirements.txt
 
-python -m playwright install chromium --with-deps
+python -m playwright install chromium
