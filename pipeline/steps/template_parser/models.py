@@ -21,9 +21,9 @@ class TemplateAnalysis(BaseModel):
     )
 
     search_terms: List[str] = Field(
-        description="1-3 search queries for Google Custom Search",
+        description="1-2 search queries for Google Custom Search",
         min_length=1,
-        max_length=3
+        max_length=2
     )
 
     placeholders: List[str] = Field(
@@ -54,8 +54,7 @@ class TemplateAnalysis(BaseModel):
                 "template_type": "RESEARCH",
                 "search_terms": [
                     "Dr. Jane Smith machine learning",
-                    "Jane Smith publications research",
-                    "Jane Smith university faculty page"
+                    "Jane Smith publications research"
                 ],
                 "placeholders": ["{{name}}", "{{research}}", "{{university}}"]
             }

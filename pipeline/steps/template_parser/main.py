@@ -41,10 +41,6 @@ class TemplateParserStep(BasePipelineStep):
         """Initialize template parser step."""
         super().__init__(step_name="template_parser")
 
-        # Validate API key is configured
-        if not settings.anthropic_api_key:
-            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
         # Model configuration
         self.model = "anthropic:claude-haiku-4-5"
         self.max_tokens = 2000

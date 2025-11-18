@@ -33,7 +33,7 @@ class GoogleSearchClient:
     async def search(
         self,
         query: str,
-        num_results: int = 5,
+        num_results: int = 3,
         timeout: float = 10.0
     ) -> List[Dict[str, Any]]:
         """

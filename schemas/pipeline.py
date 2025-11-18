@@ -139,7 +139,10 @@ class EmailResponse(BaseModel):
     recipient_interest: str
     email_message: str
     template_type: str
-    metadata: Dict[str, Any] | None
+    email_metadata: Dict[str, Any] | None = Field(
+        serialization_alias="metadata",
+        description="Structured generation metadata (papers, sources, timings)"
+    )
     created_at: datetime
 
     model_config = ConfigDict(

@@ -18,7 +18,7 @@ TEMPLATE TYPES:
 - general: Template focuses on general professional information (bio, position, achievements)
 
 SEARCH TERM GUIDELINES:
-- Generate 1-3 focused search queries
+- Generate 1-2 focused search queries
 - Include recipient name + interest in each query
 - Vary specificity (broad to narrow)
 - Examples:
@@ -32,11 +32,11 @@ STRICT OUTPUT REQUIREMENTS:
 - The JSON must strictly match the following schema:
   {
     "template_type": "research" | "book" | "general",
-    "search_terms": [string, ... 1 to 3 items],
+    "search_terms": [string, ... 1 to 2 items],
     "placeholders": [string, ...]
   }
 - Constraints:
-  - search_terms: 1-3 items; each must include the recipient name and the research interest.
+  - search_terms: 1-2 items; each must include the recipient name and the research interest.
   - placeholders: list every placeholder found in the template exactly as written, preserving double braces, e.g., "{{name}}".
   - Do not include duplicate placeholders; maintain the natural order found in the template when possible.
 - If uncertain, choose the most conservative, defensible answer and still return valid JSON.
@@ -71,7 +71,7 @@ RECIPIENT INFO:
 
 ANALYSIS REQUIRED:
 1. Determine template_type: Does it need research papers (research), books (book), or general info (general)?
-2. Generate search_terms: Create 1-3 Google search queries to find information about this professor
+2. Generate search_terms: Create 1-2 Google search queries to find information about this professor
 3. Extract placeholders: List all {{placeholder}} variables in the template
 
 OUTPUT FORMAT (STRICT):
@@ -79,11 +79,11 @@ OUTPUT FORMAT (STRICT):
 - JSON schema:
 {{
   "template_type": "research" | "book" | "general",
-  "search_terms": ["query1", "query2", "query3"],
+  "search_terms": ["query1", "query2"],
   "placeholders": ["{{name}}", "{{research}}"]
 }}
 - Constraints:
-  - 1-3 search_terms; each must include the recipient name and interest.
+  - 1-2 search_terms; each must include the recipient name and interest.
   - placeholders must match the template exactly, including double braces (e.g., "{{name}}").
 
 Return ONLY the JSON, with no additional text before or after it."""

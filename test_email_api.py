@@ -20,7 +20,7 @@ from typing import Dict, Any
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
-JWT_TOKEN = "eyJhbGciOiJFUzI1NiIsImtpZCI6ImMzNmRkNzM5LTM1YjItNGZjNy04NTk2LTJkZmViMjBlYWMxNyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3Nla3VmZ2d4Y2ZkZXVhbW5ncHBmLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiIyNmRjMmZiOS03ZjI3LTQ2YzItYTUzMi0xNDllNTRiM2JhOWUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYzNDQwOTU5LCJpYXQiOjE3NjM0MzczNTksImVtYWlsIjoibXNobWFuaXRAZ21haWwuY29tIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJnb29nbGUiLCJwcm92aWRlcnMiOlsiZ29vZ2xlIl19LCJ1c2VyX21ldGFkYXRhIjp7ImF2YXRhcl91cmwiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NKREtfemxISDZTZzlDZ0wya0RRYUc5aGhZRXU5X1NORWU2VUl6ZDFkaHJPOU1uRFE9czk2LWMiLCJlbWFpbCI6Im1zaG1hbml0QGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJmdWxsX25hbWUiOiJNYW5pdCBNaXNocmEiLCJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJuYW1lIjoiTWFuaXQgTWlzaHJhIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJwaWN0dXJlIjoiaHR0cHM6Ly9saDMuZ29vZ2xldXNlcmNvbnRlbnQuY29tL2EvQUNnOG9jSkRLX3psSEg2U2c5Q2dMMmtEUWFHOWhoWUV1OV9TTkVlNlVJemQxZGhyTzlNbkRRPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUiLCJzdWIiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJvYXV0aCIsInRpbWVzdGFtcCI6MTc2MzQzNzM1OX1dLCJzZXNzaW9uX2lkIjoiZjc5N2FjNmYtMWFlMi00MWIyLTg5NmQtMmY1MGYwNzU3ODI5IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.lwU1cdEM2ZdoJn2FPDzxiLkHbvtTArLPgrAGPcqX12bx-yO2bjK8K_gFeOZTxe7DEba3G2ST_zkh2YwPRjvQZw"
+JWT_TOKEN = "eyJhbGciOiJFUzI1NiIsImtpZCI6ImMzNmRkNzM5LTM1YjItNGZjNy04NTk2LTJkZmViMjBlYWMxNyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3Nla3VmZ2d4Y2ZkZXVhbW5ncHBmLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiIyNmRjMmZiOS03ZjI3LTQ2YzItYTUzMi0xNDllNTRiM2JhOWUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzYzNDQ0NzgwLCJpYXQiOjE3NjM0NDExODAsImVtYWlsIjoibXNobWFuaXRAZ21haWwuY29tIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJnb29nbGUiLCJwcm92aWRlcnMiOlsiZ29vZ2xlIl19LCJ1c2VyX21ldGFkYXRhIjp7ImF2YXRhcl91cmwiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NKREtfemxISDZTZzlDZ0wya0RRYUc5aGhZRXU5X1NORWU2VUl6ZDFkaHJPOU1uRFE9czk2LWMiLCJlbWFpbCI6Im1zaG1hbml0QGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJmdWxsX25hbWUiOiJNYW5pdCBNaXNocmEiLCJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJuYW1lIjoiTWFuaXQgTWlzaHJhIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJwaWN0dXJlIjoiaHR0cHM6Ly9saDMuZ29vZ2xldXNlcmNvbnRlbnQuY29tL2EvQUNnOG9jSkRLX3psSEg2U2c5Q2dMMmtEUWFHOWhoWUV1OV9TTkVlNlVJemQxZGhyTzlNbkRRPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUiLCJzdWIiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJvYXV0aCIsInRpbWVzdGFtcCI6MTc2MzQzNzM1OX1dLCJzZXNzaW9uX2lkIjoiZjc5N2FjNmYtMWFlMi00MWIyLTg5NmQtMmY1MGYwNzU3ODI5IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.6V2JF0jsVzLVG97obTsMyzqzH7Fs3zjDfQBDub6Tjup4Ped7WOV4hWs8GNmfLXXxX2JOleThD3GLRXi2p9nOWA"
 
 # ANSI color codes for pretty output
 GREEN = "\033[92m"
@@ -94,7 +94,20 @@ def test_generate_email() -> str | None:
 
     # Sample request payload
     payload = {
-        "email_template": "Hey {{name}}, I loved your work on {{research}}! Would love to chat about collaboration opportunities.",
+        "email_template": (
+            "Hey {{name}},\n\n"
+            "I just finished going through your {{research}} work, especially the section on {{recent_publication_title}}, and it sparked a dozen ideas on the train ride home."
+            " I’m fascinated by how you’re coordinating things at {{lab_name}} and would love to compare notes on how you’re approaching {{specific_problem}}.\n\n"
+            "Here’s why I think a quick collaboration chat could be fun:\n"
+            "• I’m currently prototyping a lightweight workflow for {{shared_goal}} and would value your take on where the real bottlenecks are.\n"
+            "• Your insights from {{recent_talk_or_event}} line up eerily well with what my team has been seeing in the field.\n"
+            "• I have access to a small pilot group eager to try anything connected to {{application_area}}, so we could pressure-test ideas fast.\n\n"
+            "If you’re open to it, could we grab {{preferred_call_length}} sometime next week?"
+            " Happy to accommodate whatever time zone you’re juggling. I can also share a short brief before we chat so you can see if it’s worth the time.\n\n"
+            "Either way, thanks for all the generous writing you’ve put out—{{standout_takeaway}} has already nudged how I’m framing our internal roadmap.\n\n"
+            "Talk soon,\n"
+            "{{sender_signature}}"
+        ),
         "recipient_name": "Andrew Ng",
         "recipient_interest": "machine learning",
         "template_type": "research"

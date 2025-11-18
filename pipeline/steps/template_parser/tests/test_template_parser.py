@@ -136,7 +136,7 @@ async def test_research_template_parsing(template_parser, research_template):
     Expected behavior:
     - Returns success=True
     - Correctly identifies template_type as RESEARCH
-    - Generates 1-3 relevant search terms
+    - Generates 1-2 relevant search terms
     - Extracts all placeholders from template
     """
     logfire.info("Starting test: test_research_template_parsing")
@@ -163,8 +163,8 @@ async def test_research_template_parsing(template_parser, research_template):
     # Assert - Search terms
     assert len(pipeline_data.search_terms) >= 1, \
         f"Should have at least 1 search term, got {len(pipeline_data.search_terms)}"
-    assert len(pipeline_data.search_terms) <= 3, \
-        f"Should have at most 3 search terms, got {len(pipeline_data.search_terms)}"
+    assert len(pipeline_data.search_terms) <= 2, \
+        f"Should have at most 2 search terms, got {len(pipeline_data.search_terms)}"
 
     # Assert - Search terms contain recipient name and interest
     search_terms_combined = " ".join(pipeline_data.search_terms).lower()

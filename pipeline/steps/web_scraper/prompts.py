@@ -143,44 +143,70 @@ CRITICAL: The summary will be used to generate a cold email. Including false or 
 
 # Batch Summarization Prompts (for tiered summarization)
 
-BATCH_SUMMARIZATION_SYSTEM_PROMPT = """You are an expert fact extractor for academic content analysis.
+BATCH_SUMMARIZATION_SYSTEM_PROMPT = """You are a precise fact extractor for academic content analysis.
 
-Your task is to extract ALL relevant factual information from a batch of scraped web content about a professor. This summary will be combined with other batch summaries, so completeness is critical.
+<task>
+Extract all factual information about the professor from the provided web content and return it as a Summary object. This extraction will be used to generate personalized cold emails, so accuracy and completeness are critical.
+</task>
 
-CRITICAL RULES:
-1. Extract EVERY verifiable fact about the professor (publications, positions, achievements, research areas)
-2. Maintain EXACT titles, names, dates, and terminology from the source
-3. Preserve source attribution - note which page number each fact came from
-4. NEVER infer or speculate - only extract explicitly stated information
-5. Include uncertainties verbatim (e.g., "approximately", "around", "likely")
-6. DO NOT filter for relevance - extract everything (filtering happens in final summary)
-7. Remove website boilerplate (navigation, footers, cookie notices)
-8. If the content contains no relevant information about the professor, return a summary stating "No relevant information found in this batch."
+<output_requirements>
+You MUST call the Summary tool with a filled 'summary' field. The Summary tool signature is:
+Summary(summary: str)
 
-OUTPUT REQUIREMENTS:
-- You MUST call the Summary tool with a 'summary' field containing your markdown-formatted extraction
-- The 'summary' field is REQUIRED and cannot be empty - always provide at least a minimal summary
-- Maximum 4000 characters per batch
-- Use clear bullet points or structured format
-- For each fact, include [PAGE X] marker to indicate source
-- Maintain chronological order when dates are present
-- Include verbatim quotes for key claims (with [PAGE X] attribution)
-- Even if no relevant information is found, you must still call the Summary tool with a summary field
+The 'summary' field must contain:
+✓ Non-empty content (minimum 100 characters)
+✓ Structured markdown with clear sections
+✓ Only facts explicitly stated in the source content
+✓ [PAGE X] markers for source attribution
+✓ Maximum 4000 characters
 
-EXAMPLE OUTPUT FORMAT:
-**Publications:**
-- [PAGE 1] "Deep Learning for Climate Modeling" (2023) - co-authored with Smith et al.
-- [PAGE 3] "Neural Networks in Weather Prediction" (2022) - published in Nature Climate
+If no relevant information exists, use this exact format:
+"No relevant information found in this batch. Content contained only [describe what was found, e.g., 'navigation elements and generic university descriptions']."
+</output_requirements>
+
+<extraction_focus>
+Extract these elements when explicitly present:
+1. Publications - exact titles, years, co-authors
+2. Current position - role, department, institution
+3. Research areas - specific fields and methodologies
+4. Achievements - awards, grants, recognition
+5. Additional context - lab names, collaborators, current projects
+
+Maintain EXACT titles, names, dates, and terminology from the source. Include verbatim quotes for key claims with [PAGE X] attribution.
+</extraction_focus>
+
+<example>
+Here is what a properly filled Summary looks like:
+
+Summary(summary=\"\"\"**Publications:**
+- [PAGE 1] \"Deep Learning for Climate Modeling\" (2023) - co-authored with Smith et al., published in Nature Climate
+- [PAGE 3] \"Neural Networks in Weather Prediction\" (2022) - first-authored
 
 **Current Position:**
 - [PAGE 2] Professor of Computer Science, MIT (since 2020)
-- [PAGE 2] Director of Climate AI Lab
+- [PAGE 2] Director of Climate AI Lab with 15 researchers
 
 **Research Areas:**
-- [PAGE 1] Machine learning for climate science
+- [PAGE 1] Machine learning applications in climate science
 - [PAGE 3] Neural network architectures for spatiotemporal data
+- [PAGE 3] Uncertainty quantification in weather models
 
-Remember: This is an intermediate extraction step. Extract everything - the final summary will filter for relevance and synthesize information."""
+**Achievements:**
+- [PAGE 3] NSF CAREER Award (2021) - $500K grant for climate modeling research
+- [PAGE 4] Outstanding Paper Award at NeurIPS 2022
+
+**Additional Context:**
+- [PAGE 2] Collaborates with NOAA on operational weather prediction systems
+- [PAGE 4] PhD students: 8 current, 12 graduated\"\"\")
+
+This is a complete, valid output. The 'summary' field contains all extracted content in structured markdown format.
+</example>
+
+<critical_reminder>
+You MUST call the Summary tool with a non-empty 'summary' field. An empty or missing field will cause validation errors and break the email generation pipeline. Always provide at least 100 characters of content, even if using the "No relevant information" fallback.
+
+This is an intermediate extraction step - extract everything you find. The final summary will filter for relevance and synthesize information across all batches.
+</critical_reminder>"""
 
 
 def create_batch_summarization_prompt(
@@ -203,16 +229,21 @@ def create_batch_summarization_prompt(
     """
     return f"""You are processing batch {batch_number} of {total_batches} for Professor {recipient_name}.
 
-TASK: Extract ALL factual information from this batch. Be comprehensive - this is an intermediate extraction.
+<instructions>
+Extract ALL factual information from the batch content below. Be comprehensive - this is an intermediate extraction step that will be combined with other batches.
 
-BATCH CONTENT:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Follow the structured format in your system prompt with sections: Publications, Current Position, Research Areas, Achievements, Additional Context.
+
+Include [PAGE X] markers for source attribution. Maximum 4000 characters.
+</instructions>
+
+<batch_content>
 {batch_content}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</batch_content>
 
-Extract all relevant facts following the structured format in your system prompt.
-Include [PAGE X] markers for source attribution.
-Maximum 4000 characters."""
+<reminder>
+Call the Summary tool with a non-empty 'summary' field containing your extracted facts in markdown format. Minimum 100 characters required.
+</reminder>"""
 
 
 # Final Summary Prompts (synthesis with COT)

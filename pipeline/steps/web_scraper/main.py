@@ -59,18 +59,19 @@ class WebScraperStep(BasePipelineStep):
         )
 
         # Configuration
-        self.results_per_query = 3
-        self.max_pages_to_scrape = 6
+        self.results_per_query = 2
+        self.max_pages_to_scrape = 5
         self.scrape_timeout = 10.0
         # MEMORY CONSTRAINED: Render has 512MB RAM, each browser ~150MB
         # With 2 concurrent browsers, causes OOM. Use sequential scraping.
         self.max_concurrent_scrapes = 1  # Only 1 browser at a time
 
-        # Batch summarization configuration
-        self.chunk_size = 8000  # Characters per chunk (for content splitting)
-        self.batch_max_output_chars = 1000  # Max chars per batch summary
+        # Page-based summarization configuration
+        self.chunk_size = 30000  # Characters threshold for single-page direct summarization
+        self.max_page_content_size = 30000  # Maximum characters per page for batch summarization
+        self.batch_max_output_chars = 1000  # Max chars per page summary
         self.final_max_output_chars = 3000  # Max chars for final summary
-        self.max_batches_allowed = 5  # Maximum number of batches allowed for summarization
+        self.max_batches_allowed = 5  # Maximum number of pages allowed for summarization
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
         """
@@ -180,22 +181,21 @@ class WebScraperStep(BasePipelineStep):
                 metadata={"scraped_pages": 0}
             )
 
-        # Step 4: Combine and summarize content
-        combined_content = self._combine_scraped_content(scraped_pages)
-
+        # Step 4: Summarize content (page-based)
         # ALWAYS summarize with LLM for:
         # 1. Anti-hallucination fact checking
         # 2. Content filtering (removes boilerplate, duplicates)
         # 3. Context optimization for email generation
         # 4. Structured output format
+        total_content_length = sum(len(page.content) for page in scraped_pages)
         logfire.info(
             "Summarizing content with LLM for fact verification",
-            original_length=len(combined_content),
+            total_content_length=total_content_length,
             num_pages=len(scraped_pages)
         )
 
         final_content = await self._summarize_content(
-            content=combined_content,
+            scraped_pages=scraped_pages,
             recipient_name=pipeline_data.recipient_name,
             recipient_interest=pipeline_data.recipient_interest,
             template_type=pipeline_data.template_type
@@ -303,69 +303,6 @@ class WebScraperStep(BasePipelineStep):
                 # Always close browser
                 await browser.close()
 
-    def _combine_scraped_content(self, pages: List[ScrapedPage]) -> str:
-        """
-        Combine content from multiple pages with clear page markers.
-
-        Each page is wrapped with delimiters for batch processing:
-        - Start marker: === PAGE {index}: {url} ===
-        - End marker: === END PAGE {index} ===
-
-        This allows batch summarization to maintain source attribution.
-
-        Args:
-            pages: List of scraped pages
-
-        Returns:
-            Combined content string with page markers
-        """
-        parts = []
-
-        for idx, page in enumerate(pages, start=1):
-            # Start marker
-            parts.append(f"{'=' * 80}\n")
-            parts.append(f"=== PAGE {idx}: {page.url} ===\n")
-            parts.append(f"{'=' * 80}\n\n")
-
-            # Page title (if exists)
-            if page.title:
-                parts.append(f"Title: {page.title}\n\n")
-
-            # Page content
-            parts.append(f"{page.content}\n\n")
-
-            # End marker
-            parts.append(f"{'=' * 80}\n")
-            parts.append(f"=== END PAGE {idx} ===\n")
-            parts.append(f"{'=' * 80}\n\n\n")
-
-        return ''.join(parts)
-
-    def _split_into_chunks(self, content: str, chunk_size: int) -> List[str]:
-        """
-        Split content into chunks of exactly chunk_size characters.
-
-        Args:
-            content: Full combined text
-            chunk_size: Target chunk size in characters
-
-        Returns:
-            List of content chunks, each ≤ chunk_size characters
-        """
-        if len(content) <= chunk_size:
-            return [content]
-
-        chunks = []
-        position = 0
-        content_length = len(content)
-
-        while position < content_length:
-            end_position = min(position + chunk_size, content_length)
-            chunks.append(content[position:end_position])
-            position = end_position
-
-        return chunks
-
     async def _summarize_batch(
         self,
         batch_content: str,
@@ -438,16 +375,18 @@ class WebScraperStep(BasePipelineStep):
                 batch_number=batch_number,
                 total_batches=total_batches,
                 error=error_msg,
-                error_type=type(e).__name__
+                error_type=type(e).__name__,
+                input_size=len(batch_content)
             )
 
             # If validation failed due to empty summary, return a fallback
             if "Field required" in error_msg or "missing" in error_msg.lower():
                 logfire.warning(
                     "Validation error detected, using fallback summary",
-                    batch_number=batch_number
+                    batch_number=batch_number,
+                    input_length=len(batch_content)
                 )
-                return f"Batch {batch_number} processed but no structured information could be extracted."
+                return f"[Page {batch_number} content could not be summarized due to validation error. Input size: {len(batch_content)} chars. This may indicate the page was too large or contained incompatible content.]"
 
             # For other errors, raise
             raise ExternalAPIError(
@@ -456,22 +395,21 @@ class WebScraperStep(BasePipelineStep):
 
     async def _summarize_content(
         self,
-        content: str,
+        scraped_pages: List[ScrapedPage],
         recipient_name: str,
         recipient_interest: str,
         template_type: 'TemplateType'
     ) -> str:  # Returns summary text string, not Summary object
         """
-        Two-tier summarization with batch processing and final synthesis.
+        Two-tier page-based summarization with final synthesis.
 
         Architecture:
-        1. Split content into 30K-char chunks
-        2. Summarize each batch independently (extraction focus)
-        3. Combine batch summaries
-        4. Final synthesis with COT and anti-hallucination logic
+        1. Summarize each page independently (preserves source attribution)
+        2. Combine page summaries
+        3. Final synthesis with COT and anti-hallucination logic
 
         Args:
-            content: Combined scraped content (all pages)
+            scraped_pages: List of scraped pages (each with url and content)
             recipient_name: Professor name
             recipient_interest: Research area
             template_type: Template type (RESEARCH, BOOK, GENERAL)
@@ -481,16 +419,21 @@ class WebScraperStep(BasePipelineStep):
         """
         from .prompts import FINAL_SUMMARY_SYSTEM_PROMPT, create_final_summary_prompt
 
-        # Edge case: Content fits in single batch (skip batch layer)
-        if len(content) <= self.chunk_size:
+        # Edge case: No pages scraped
+        if not scraped_pages:
+            logfire.warning("No pages to summarize")
+            return "No content available to summarize."
+
+        # Edge case: Single page with small content (skip batch layer)
+        if len(scraped_pages) == 1 and len(scraped_pages[0].content) <= self.chunk_size:
             logfire.info(
-                "Content fits in single batch, using direct summarization",
-                content_length=len(content)
+                "Single small page, using direct summarization",
+                content_length=len(scraped_pages[0].content)
             )
 
             # Use existing single-pass logic
             user_prompt = create_summarization_prompt(
-                scraped_content=content,
+                scraped_content=scraped_pages[0].content,
                 recipient_name=recipient_name,
                 recipient_interest=recipient_interest,
                 template_type=template_type
@@ -505,9 +448,8 @@ class WebScraperStep(BasePipelineStep):
 
                 logfire.info(
                     "Direct summarization completed",
-                    original_length=len(content),
+                    original_length=len(scraped_pages[0].content),
                     summary_length=len(summary_text),
-                    content_length=len(content),
                     template_type=template_type.value
                 )
 
@@ -517,65 +459,102 @@ class WebScraperStep(BasePipelineStep):
                 logfire.error(
                     "Direct summarization failed",
                     error=str(e),
-                    content_length=len(content),
+                    content_length=len(scraped_pages[0].content),
                     template_type=template_type.value
                 )
                 raise ExternalAPIError(f"Failed to summarize content: {str(e)}")
 
-        # Main flow: Multi-batch processing
-        chunks = self._split_into_chunks(content, chunk_size=self.chunk_size)
+        # Main flow: Page-based batch processing
+        total_pages = len(scraped_pages)
 
-        # Enforce maximum number of batches allowed
-        if len(chunks) > self.max_batches_allowed:
-            chunks = chunks[:self.max_batches_allowed]
+        # Enforce maximum number of pages allowed
+        if total_pages > self.max_batches_allowed:
+            logfire.warning(
+                "Too many pages, limiting to max allowed",
+                original_count=total_pages,
+                limited_to=self.max_batches_allowed
+            )
+            scraped_pages = scraped_pages[:self.max_batches_allowed]
+            total_pages = self.max_batches_allowed
 
-        total_batches = len(chunks)
+        total_content_length = sum(len(page.content) for page in scraped_pages)
 
         logfire.info(
-            "Starting batch summarization",
-            total_content_length=len(content),
-            num_batches=total_batches,
-            avg_batch_size=len(content) // total_batches
+            "Starting page-based summarization",
+            total_pages=total_pages,
+            total_content_length=total_content_length,
+            avg_page_length=total_content_length // total_pages
         )
 
-        # Step 1: Batch Summarizations
+        # Step 1: Page-level Summarizations
         # Each batch agent.run() will be auto-instrumented by pydantic-ai
-        batch_summaries = []
+        page_summaries = []
 
         logfire.info(
-            "Processing batch summarizations",
-            total_batches=total_batches,
-            content_length=len(content)
+            "Processing page summarizations",
+            total_pages=total_pages
         )
 
-        for idx, chunk in enumerate(chunks, start=1):
-            batch_summary = await self._summarize_batch(
-                batch_content=chunk,
+        for idx, page in enumerate(scraped_pages, start=1):
+            # Truncate page content if it exceeds maximum size
+            page_content = page.content
+            was_truncated = False
+
+            if len(page_content) > self.max_page_content_size:
+                logfire.warning(
+                    "Page content exceeds limit, truncating",
+                    page_number=idx,
+                    original_size=len(page_content),
+                    truncated_to=self.max_page_content_size,
+                    url=page.url
+                )
+                page_content = page_content[:self.max_page_content_size]
+                was_truncated = True
+
+            # Add truncation notice if content was truncated
+            truncation_notice = "\n\n[CONTENT TRUNCATED - Original length exceeded 30,000 character limit]\n" if was_truncated else ""
+
+            # Format page with URL marker for source attribution
+            page_content_with_marker = f"""{'=' * 80}
+=== PAGE {idx}: {page.url} ===
+{'=' * 80}
+
+Title: {page.title or 'N/A'}
+
+{page_content}{truncation_notice}
+
+{'=' * 80}
+=== END PAGE {idx} ===
+{'=' * 80}"""
+
+            # Summarize this page (reusing existing batch summarization logic)
+            page_summary = await self._summarize_batch(
+                batch_content=page_content_with_marker,
                 batch_number=idx,
-                total_batches=total_batches,
+                total_batches=total_pages,
                 recipient_name=recipient_name
             )
-            batch_summaries.append(batch_summary)
+            page_summaries.append(page_summary)
 
-            # Add delay between batch API calls to avoid rate limiting (429 errors)
-            if idx < total_batches:
-                await asyncio.sleep(0.5)
+            # Add delay between page API calls to avoid rate limiting (429 errors)
+            if idx < total_pages:
+                await asyncio.sleep(2)
 
-        # Step 2: Combine batch summaries with markers
-        tiered_summarizations = ""
-        for idx, summary in enumerate(batch_summaries, start=1):
-            tiered_summarizations += f"{'=' * 80}\n"
-            tiered_summarizations += f"=== BATCH {idx} SUMMARY ===\n"
-            tiered_summarizations += f"{'=' * 80}\n\n"
-            tiered_summarizations += f"{summary}\n\n"
-            tiered_summarizations += f"{'=' * 80}\n"
-            tiered_summarizations += f"=== END BATCH {idx} ===\n"
-            tiered_summarizations += f"{'=' * 80}\n\n\n"
+        # Step 2: Combine page summaries with markers
+        combined_page_summaries = ""
+        for idx, summary in enumerate(page_summaries, start=1):
+            combined_page_summaries += f"{'=' * 80}\n"
+            combined_page_summaries += f"=== PAGE {idx} SUMMARY ===\n"
+            combined_page_summaries += f"{'=' * 80}\n\n"
+            combined_page_summaries += f"{summary}\n\n"
+            combined_page_summaries += f"{'=' * 80}\n"
+            combined_page_summaries += f"=== END PAGE {idx} ===\n"
+            combined_page_summaries += f"{'=' * 80}\n\n\n"
 
         logfire.info(
-            "Batch summaries combined",
-            num_batches=len(batch_summaries),
-            combined_length=len(tiered_summarizations)
+            "Page summaries combined",
+            num_pages=len(page_summaries),
+            combined_length=len(combined_page_summaries)
         )
 
         # Step 3: Final Summary Agent (with COT)
@@ -590,13 +569,12 @@ class WebScraperStep(BasePipelineStep):
         )
 
         final_prompt = create_final_summary_prompt(
-            batch_summaries=tiered_summarizations,
+            batch_summaries=combined_page_summaries,
             recipient_name=recipient_name,
             recipient_interest=recipient_interest,
             template_type=template_type
         )
 
-        
         try:
             result = await final_agent.run(final_prompt)
             summary_obj: Summary = result.output  # Summary object from pydantic-ai
@@ -604,9 +582,8 @@ class WebScraperStep(BasePipelineStep):
 
             logfire.info(
                 "Final summary completed",
-                batches_processed=len(batch_summaries),
+                pages_processed=len(page_summaries),
                 final_length=len(final_summary_text),
-                num_batches=len(batch_summaries),
                 template_type=template_type.value
             )
 
@@ -616,7 +593,7 @@ class WebScraperStep(BasePipelineStep):
             logfire.error(
                 "Final summary generation failed",
                 error=str(e),
-                num_batches=len(batch_summaries),
+                num_pages=len(page_summaries),
                 template_type=template_type.value
             )
             raise ExternalAPIError(f"Failed to generate final summary: {str(e)}")
