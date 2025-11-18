@@ -18,6 +18,6 @@ services:
     buildCommand: |
       pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: celery -A celery_config.celery_app worker --loglevel=info
+    startCommand: celery -A celery_config.celery_app worker -Q email_default,celery --loglevel=info
     envVars:
       - fromGroup: scribe-backend
