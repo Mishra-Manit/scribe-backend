@@ -43,7 +43,7 @@ def _coerce_template_type(value: str | TemplateType | None) -> TemplateType | No
         ) from exc
 
 
-@celery_app.task(bind=True, name="tasks.generate_email")
+@celery_app.task(bind=True)
 def generate_email_task(
     self,
     *,

@@ -248,48 +248,68 @@ Call the Summary tool with a non-empty 'summary' field containing your extracted
 
 # Final Summary Prompts (synthesis with COT)
 
-FINAL_SUMMARY_SYSTEM_PROMPT = """You are an expert academic researcher creating a final synthesis from multiple information sources.
+FINAL_SUMMARY_SYSTEM_PROMPT = """You are an expert academic researcher synthesizing information for cold email personalization.
 
-You will receive pre-extracted facts from multiple batches of web content about a professor. Your task is to create a concise, high-quality summary optimized for cold email personalization.
+<task>
+Combine multiple batch summaries into ONE concise, high-quality final summary. This will be used to generate a personalized cold email, so accuracy and relevance are critical.
+</task>
 
-CHAIN-OF-THOUGHT REASONING PROCESS:
-Before generating the final summary, mentally go through these steps:
+<synthesis_process>
+Mentally evaluate the batch summaries by:
+1. Identifying facts that appear in multiple batches (highest confidence)
+2. Filtering for the most relevant and recent information
+3. Removing redundant or duplicate facts
+4. Prioritizing information useful for email personalization
 
-1. FACT VERIFICATION:
-   - Which facts appear in multiple batches? (higher confidence)
-   - Which facts appear in only one batch? (mark as [SINGLE SOURCE] if unusual)
-   - Are there any contradictions between batches? (flag as [UNCERTAIN])
+Mark facts from single sources as [SINGLE SOURCE] if unusual. Mark contradictions as [UNCERTAIN] or omit them.
+</synthesis_process>
 
-2. RELEVANCE FILTERING:
-   - Which facts are most relevant to the email template type?
-   - Which publications/achievements are most recent or notable?
-   - Which research areas align with the recipient's stated interests?
+<output_requirements>
+You MUST call the Summary tool with a filled 'summary' field. The Summary tool signature is:
+Summary(summary: str)
 
-3. SYNTHESIS:
-   - Can multiple sources be combined to create richer context?
-   - What are the 3-5 most important facts for personalization?
-   - How can I structure this to maximize email effectiveness?
+The 'summary' field must contain:
+✓ Non-empty content (minimum 150 characters)
+✓ Structured markdown with sections: PUBLICATIONS, RESEARCH AREAS, CURRENT POSITION, ACHIEVEMENTS, ADDITIONAL CONTEXT
+✓ Only facts explicitly present in the batch summaries provided
+✓ Maximum 3000 characters
+✓ Concrete, specific information (exact paper titles, clear positions)
 
-ANTI-HALLUCINATION SAFEGUARDS:
-✓ ONLY include information explicitly present in the batch summaries
-✓ If a fact seems important but lacks multi-source confirmation, mark [SINGLE SOURCE]
-✓ If sources contradict, mark the entire claim as [UNCERTAIN] or omit it
-✓ NEVER fill gaps with general knowledge - leave sections empty if no data
-✓ Prefer exact quotes from batch summaries over paraphrasing
-✓ When dates are approximate in sources, preserve that uncertainty
+If no information is available for a section, write: "Not found in sources."
+</output_requirements>
 
-QUALITY REQUIREMENTS:
-- Return as a Summary object with a 'summary' field containing your final synthesized markdown
-- Maximum 3000 characters (strict limit)
-- Prioritize quality over quantity - be selective
-- Focus on concrete facts: specific papers, clear positions, explicit research areas
-- Remove redundant information present in multiple batches
-- Structure for maximum email personalization value
+<example>
+Here is what a properly filled Summary looks like:
 
-OUTPUT FORMAT:
-Use the same structured format as the current summarization (sections: PUBLICATIONS, RESEARCH AREAS, CURRENT POSITION, ACHIEVEMENTS, ADDITIONAL CONTEXT).
+Summary(summary=\"\"\"**PUBLICATIONS:**
+- \"Attention Is All You Need\" (2017) - seminal transformer paper with 100K+ citations
+- \"BERT: Pre-training of Deep Bidirectional Transformers\" (2018) - introduced BERT model
 
-Remember: This summary will be used to write a cold email. False or hallucinated information will destroy credibility."""
+**RESEARCH AREAS:**
+- Natural language processing and transformers
+- Self-supervised learning for language models
+- Large-scale neural network training
+
+**CURRENT POSITION:**
+- Senior Research Scientist at Google Brain (since 2015)
+- Adjunct Professor at Stanford University
+
+**ACHIEVEMENTS:**
+- Test of Time Award at NeurIPS 2023
+- 200K+ total citations across publications
+
+**ADDITIONAL CONTEXT:**
+- Leads the Language Understanding team with 20+ researchers
+- Regular keynote speaker at NLP conferences\"\"\")
+
+This is a complete, valid output. The 'summary' field contains the synthesized information in structured markdown.
+</example>
+
+<critical_reminder>
+You MUST call the Summary tool with a non-empty 'summary' field. An empty field will cause validation errors and break the email generation pipeline.
+
+Only include information explicitly stated in the batch summaries - NEVER add facts from general knowledge. Preserve uncertainty markers from sources. This summary determines email credibility, so accuracy is paramount.
+</critical_reminder>"""
 
 
 def create_final_summary_prompt(
@@ -313,46 +333,53 @@ def create_final_summary_prompt(
     # Template-specific guidance
     template_emphasis = ""
     if template_type == TemplateType.RESEARCH:
-        template_emphasis = f"""
-**CRITICAL - RESEARCH TEMPLATE REQUIREMENTS:**
-The email template REQUIRES specific publication titles. Your synthesis must:
-1. Prioritize extracting complete, exact paper titles
-2. Include publication years when available
-3. Filter for publications where {recipient_name} is clearly the author
-4. If multiple publications available, select 2-3 most recent or impactful
-5. If NO publications found across all batches, explicitly state "No publications found"
-"""
-    elif template_type == TemplateType.BOOK:
-        template_emphasis = f"""
-**CRITICAL - BOOK TEMPLATE REQUIREMENTS:**
-The email template focuses on books. Your synthesis must:
-1. Prioritize book titles (full titles, not abbreviations)
-2. Include publisher and year when available
-3. Only include books where {recipient_name} is author/editor
-4. If NO books found, explicitly state "No books found"
-"""
-    else:
-        template_emphasis = """
-**GENERAL TEMPLATE:**
-Create balanced summary covering: research areas, current position, notable work.
-"""
+        template_emphasis = f"""<template_requirements>
+RESEARCH TEMPLATE - Publication titles are critical for this email type.
 
-    return f"""You are creating the final summary for Professor {recipient_name} (research area: {recipient_interest}).
+Prioritize in your synthesis:
+1. Complete, exact paper titles (not abbreviations)
+2. Publication years when available
+3. Publications where {recipient_name} is clearly the author
+4. Select 2-3 most recent or impactful papers if multiple are available
+5. If NO publications found, explicitly state "No publications found in sources."
+</template_requirements>"""
+    elif template_type == TemplateType.BOOK:
+        template_emphasis = f"""<template_requirements>
+BOOK TEMPLATE - Book titles are critical for this email type.
+
+Prioritize in your synthesis:
+1. Full book titles (not abbreviations)
+2. Publisher and year when available
+3. Books where {recipient_name} is author/editor
+4. If NO books found, explicitly state "No books found in sources."
+</template_requirements>"""
+    else:
+        template_emphasis = """<template_requirements>
+GENERAL TEMPLATE - Create a balanced summary.
+
+Include: research areas, current position, notable work or achievements.
+</template_requirements>"""
+
+    return f"""You are creating the final summary for Professor {recipient_name}, whose research area is {recipient_interest}.
 
 {template_emphasis}
 
-CHAIN-OF-THOUGHT INSTRUCTIONS:
-1. Read all batch summaries below
-2. Identify facts with multi-source confirmation (highest confidence)
-3. Note facts from single sources (mark [SINGLE SOURCE] if unusual/important)
-4. Check for contradictions (mark [UNCERTAIN] or omit)
-5. Filter for relevance to the template type above
-6. Synthesize into structured, concise summary (max 3000 chars)
+<instructions>
+Synthesize the batch summaries below into ONE final summary:
 
-BATCH SUMMARIES:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Identify facts appearing in multiple batches (highest confidence)
+2. Filter for the most relevant and recent information
+3. Remove redundant or duplicate facts
+4. Structure for maximum email personalization value
+
+Follow the structured format: PUBLICATIONS, RESEARCH AREAS, CURRENT POSITION, ACHIEVEMENTS, ADDITIONAL CONTEXT
+Maximum 3000 characters.
+</instructions>
+
+<batch_summaries>
 {batch_summaries}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+</batch_summaries>
 
-Think through the 6-step COT process above, then generate the final structured summary.
-Focus on quality and verifiability - this will be used for a cold email."""
+<reminder>
+Call the Summary tool with a non-empty 'summary' field containing your synthesized markdown. Minimum 150 characters required. Only include facts explicitly present in the batch summaries above.
+</reminder>"""
