@@ -105,9 +105,10 @@ class EmailComposerStep(BasePipelineStep):
         1. Prepare composition prompt
         2. Generate email via Anthropic API
         3. Validate email quality
-        4. Retry if validation fails (max 2 retries)
-        5. Write to database
-        6. Update PipelineData
+        4. Prepare metadata for database storage
+        5. Write to database with template_type and metadata
+        6. Increment user generation count
+        7. Update PipelineData with results
         """
         try:
             # Step 1: Prepare prompt
@@ -142,12 +143,35 @@ class EmailComposerStep(BasePipelineStep):
                     error="Failed to generate valid email after all retry attempts"
                 )
 
-            # Step 4: Write to database
+            # Step 4: Prepare metadata for database
+            # Aggregate all pipeline metadata for JSONB storage
+            database_metadata = {
+                "search_terms": pipeline_data.search_terms,
+                "template_type": pipeline_data.template_type.value,
+                "scraped_urls": pipeline_data.scraped_urls,
+                "scraping_metadata": pipeline_data.scraping_metadata,
+                "arxiv_papers": [
+                    {
+                        "title": paper.get("title"),
+                        "arxiv_url": paper.get("arxiv_url"),
+                        "year": paper.get("year")
+                    }
+                    for paper in (pipeline_data.arxiv_papers or [])
+                ],
+                "step_timings": pipeline_data.step_timings,
+                "generation_metadata": composed_email.generation_metadata,
+                "model": self.model,
+                "temperature": self.temperature
+            }
+
+            # Step 5: Write to database
             email_id = await write_email_to_db(
                 user_id=pipeline_data.user_id,
                 recipient_name=pipeline_data.recipient_name,
                 recipient_interest=pipeline_data.recipient_interest,
-                email_content=composed_email.email_content
+                email_content=composed_email.email_content,
+                template_type=pipeline_data.template_type,
+                metadata=database_metadata
             )
 
             if not email_id:
@@ -163,10 +187,10 @@ class EmailComposerStep(BasePipelineStep):
                 word_count=len(composed_email.email_content.split())
             )
 
-            # Step 5: Increment user generation count (non-critical)
+            # Step 6: Increment user generation count (non-critical)
             await increment_user_generation_count(user_id=pipeline_data.user_id)
 
-            # Step 6: Update PipelineData
+            # Step 7: Update PipelineData
             pipeline_data.final_email = composed_email.email_content
 
             pipeline_data.composition_metadata = {

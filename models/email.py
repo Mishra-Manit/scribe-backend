@@ -79,7 +79,12 @@ class Email(Base):
     )
 
     template_type = Column(
-        Enum(TemplateType, name="template_type_enum", native_enum=True),
+        Enum(
+            TemplateType,
+            name="template_type_enum",
+            native_enum=True,
+            values_callable=lambda x: [e.value for e in x]
+        ),
         nullable=False,
         index=True,
         comment="Pipeline template classification"

@@ -57,65 +57,18 @@ def create_agent(
     The agent automatically uses Logfire instrumentation for observability.
 
     Args:
-        model: Model identifier in pydantic-ai format. Examples:
-            - "anthropic:claude-sonnet-4-5-20250929"
-            - "anthropic:claude-haiku-4-5"
-            - "openai:gpt-4"
-            - "openai:gpt-3.5-turbo"
+        model: Model identifier in pydantic-ai format.
         output_type: Output type for the agent. Options:
             - None or str: Returns plain text (default)
             - YourPydanticModel: Returns validated Pydantic model instance
         system_prompt: System prompt to define agent behavior. If not provided,
             uses a default based on result_type
         temperature: Sampling temperature (0.0-1.0)
-            - Lower (0.0-0.3): More deterministic, good for structured output
-            - Medium (0.4-0.7): Balanced creativity and consistency
-            - Higher (0.8-1.0): More creative and varied
         max_tokens: Maximum tokens in the response
         retries: Number of retries on failure (uses exponential backoff)
 
     Returns:
         Agent configured with automatic Logfire instrumentation
-
-    Examples:
-        # Text generation with Sonnet:
-        >>> agent = create_agent(
-        ...     model="anthropic:claude-sonnet-4-5-20250929",
-        ...     system_prompt="You are a professional email writer",
-        ...     temperature=0.7,
-        ...     max_tokens=2000
-        ... )
-        >>> result = await agent.run("Write a follow-up email...")
-        >>> print(result.output)  # Plain text email
-
-        # Structured output with Haiku (faster, cheaper):
-        >>> from pydantic import BaseModel
-        >>>
-        >>> class TemplateAnalysis(BaseModel):
-        ...     template_type: str
-        ...     search_terms: list[str]
-        >>>
-        >>> agent = create_agent(
-        ...     model="anthropic:claude-haiku-4-5",
-        ...     output_type=TemplateAnalysis,
-        ...     system_prompt="Extract search parameters from email templates",
-        ...     temperature=0.1,
-        ...     max_tokens=1500
-        ... )
-        >>> result = await agent.run("Template: Research on {topic}...")
-        >>> analysis = result.output  # Type: TemplateAnalysis
-
-        # Use any model for any task:
-        >>> summarizer = create_agent(
-        ...     model="anthropic:claude-haiku-4-5",  # Fast model for summarization
-        ...     temperature=0.3,
-        ...     max_tokens=3000
-        ... )
-        >>> composer = create_agent(
-        ...     model="anthropic:claude-sonnet-4-5-20250929",  # High-quality model
-        ...     temperature=0.7,
-        ...     max_tokens=2000
-        ... )
     """
     resolved_output_type = _resolve_output_type(output_type)
     _ensure_anthropic_key(model)
@@ -181,36 +134,3 @@ async def run_agent(
 
     result = await agent.run(prompt)
     return result.output
-
-
-# Usage examples:
-#
-# >>> agent = create_agent(
-# ...     model="anthropic:claude-sonnet-4-5-20250929",
-# ...     system_prompt="You are a professional email writer",
-# ...     temperature=0.7,
-# ...     max_tokens=2000,
-# ... )
-# >>> result = await agent.run("Write a follow-up email...")
-# >>> print(result.output)  # Plain text email
-#
-# >>> class TemplateAnalysis(BaseModel):
-# ...     template_type: str
-# ...     search_terms: list[str]
-#
-# >>> agent = create_agent(
-# ...     model="anthropic:claude-haiku-4-5",
-# ...     output_type=TemplateAnalysis,
-# ...     system_prompt="Extract search parameters from email templates",
-# ...     temperature=0.1,
-# ...     max_tokens=1500,
-# ... )
-# >>> analysis = await agent.run("Template: Research on {topic}...")
-# >>> print(analysis.template_type)
-#
-# >>> text = await run_agent(
-# ...     prompt="Summarize this article...",
-# ...     model="anthropic:claude-haiku-4-5",
-# ...     temperature=0.3,
-# ... )
-# >>> print(text)
