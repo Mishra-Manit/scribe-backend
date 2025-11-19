@@ -14,24 +14,20 @@ from database.base import SessionLocal
 @contextmanager
 def get_db_context() -> Generator[Session, None, None]:
     """
-    Context manager for database sessions.
+    Database session context manager.
 
-    Usage:
+    Usage (read-only):
         with get_db_context() as db:
             user = db.query(User).first()
 
-    Yields:
-        Session: SQLAlchemy database session
-
-    Ensures:
-        - Session is properly closed after use
-        - Exceptions trigger rollback
-        - Commits on successful completion
+    Usage (with write):
+        with get_db_context() as db:
+            db.add(user)
+            db.commit()
     """
     db = SessionLocal()
     try:
         yield db
-        db.commit()
     except Exception:
         db.rollback()
         raise
@@ -40,14 +36,5 @@ def get_db_context() -> Generator[Session, None, None]:
 
 
 def create_session() -> Session:
-    """
-    Create a new database session.
-
-    Returns:
-        Session: A new SQLAlchemy session
-
-    Note:
-        Caller is responsible for closing the session.
-        Consider using get_db_context() instead for automatic cleanup.
-    """
+    """Create a new database session."""
     return SessionLocal()

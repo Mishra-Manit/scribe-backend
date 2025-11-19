@@ -1,7 +1,6 @@
 """Utilities for creating instrumented pydantic-ai agents."""
 
 import logging
-import os
 from typing import Optional, Type, TypeVar, Union
 
 from pydantic import BaseModel
@@ -25,14 +24,6 @@ def _resolve_output_type(output_type: Optional[Type[T]]) -> Type[Union[BaseModel
     )
 
 
-def _ensure_anthropic_key(model: str) -> None:
-    if not model.startswith("anthropic:"):
-        return
-    if "ANTHROPIC_API_KEY" in os.environ:
-        return
-    os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key or ""
-
-
 def _default_system_prompt(output_type: Type[Union[BaseModel, str]]) -> str:
     if output_type is str:
         return "You are a helpful AI assistant."
@@ -49,49 +40,35 @@ def create_agent(
     temperature: float = 0.7,
     max_tokens: int = 2000,
     retries: int = 2,
+    timeout: Optional[float] = None,
 ) -> Agent[None, T]:
-    """
-    Create a flexible pydantic-ai agent for any LLM task.
-
-    This factory function creates agents that work with any model and any output type.
-    The agent automatically uses Logfire instrumentation for observability.
-
-    Args:
-        model: Model identifier in pydantic-ai format.
-        output_type: Output type for the agent. Options:
-            - None or str: Returns plain text (default)
-            - YourPydanticModel: Returns validated Pydantic model instance
-        system_prompt: System prompt to define agent behavior. If not provided,
-            uses a default based on result_type
-        temperature: Sampling temperature (0.0-1.0)
-        max_tokens: Maximum tokens in the response
-        retries: Number of retries on failure (uses exponential backoff)
-
-    Returns:
-        Agent configured with automatic Logfire instrumentation
-    """
+    """Create a pydantic-ai Agent with optional output validation."""
     resolved_output_type = _resolve_output_type(output_type)
-    _ensure_anthropic_key(model)
     prompt = system_prompt or _default_system_prompt(resolved_output_type)
+
+    model_settings = {
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if timeout is not None:
+        model_settings["timeout"] = timeout
 
     agent = Agent(
         model=model,
         output_type=resolved_output_type,
         system_prompt=prompt,
         retries=retries,
-        model_settings={
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        },
+        model_settings=model_settings,
     )
 
     logger.debug(
-        "Created agent: model=%s, output_type=%s, temperature=%s, max_tokens=%s, retries=%s",
+        "Created agent: model=%s, output_type=%s, temperature=%s, max_tokens=%s, retries=%s, timeout=%s",
         model,
         getattr(resolved_output_type, "__name__", str(resolved_output_type)),
         temperature,
         max_tokens,
         retries,
+        timeout,
     )
 
     return agent
@@ -105,24 +82,9 @@ async def run_agent(
     temperature: float = 0.7,
     max_tokens: int = 2000,
     retries: int = 2,
+    timeout: Optional[float] = None,
 ) -> T:
-    """
-    Convenience helper that creates an agent, runs it, and returns the output.
-
-    Args:
-        prompt: The user prompt/question
-        model: Model identifier (e.g., "anthropic:claude-sonnet-4-5-20250929")
-        output_type: Output type (str or Pydantic model class)
-        system_prompt: Optional system prompt
-        temperature: Sampling temperature (0.0-1.0)
-        max_tokens: Maximum tokens in response
-        retries: Number of retries on failure
-
-    Returns:
-        - str if output_type is None or str
-        - Validated Pydantic model instance if output_type is a BaseModel
-
-    """
+    """Create an agent, invoke it with prompt, and return the result."""
     agent = create_agent(
         model=model,
         output_type=output_type,
@@ -130,6 +92,7 @@ async def run_agent(
         temperature=temperature,
         max_tokens=max_tokens,
         retries=retries,
+        timeout=timeout,
     )
 
     result = await agent.run(prompt)

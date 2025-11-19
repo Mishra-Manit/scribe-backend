@@ -58,6 +58,7 @@ async def write_email_to_db(
             db.flush()  # Get the ID before commit
 
             email_id = email.id
+            db.commit()  # Explicit commit
 
             logfire.info(
                 "Email written to database successfully",
@@ -104,6 +105,7 @@ async def increment_user_generation_count(user_id: UUID) -> bool:
 
             # Increment count
             user.generation_count = (user.generation_count or 0) + 1
+            db.commit()  # Explicit commit
 
             logfire.info(
                 "User generation count incremented",

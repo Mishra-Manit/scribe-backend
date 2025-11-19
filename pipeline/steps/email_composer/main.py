@@ -59,7 +59,8 @@ class EmailComposerStep(BasePipelineStep):
             system_prompt=SYSTEM_PROMPT,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            retries=1  # Agent-level retries (validation retries handled separately)
+            retries=1,
+            timeout=60.0
         )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
@@ -201,10 +202,8 @@ class EmailComposerStep(BasePipelineStep):
                 **composed_email.generation_metadata
             }
 
-            # CRITICAL: Set email_id in metadata for PipelineRunner
             pipeline_data.metadata["email_id"] = email_id
 
-            # Return success
             return StepResult(
                 success=True,
                 step_name=self.step_name,
@@ -244,7 +243,6 @@ class EmailComposerStep(BasePipelineStep):
                     max_attempts=self.max_retries + 1
                 )
 
-                # Generate email via LLM
                 result = await self.composition_agent.run(user_prompt)
                 email_text = result.output.strip()
 

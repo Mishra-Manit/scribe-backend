@@ -53,21 +53,19 @@ class WebScraperStep(BasePipelineStep):
             model="anthropic:claude-haiku-4-5",
             output_type=Summary,
             system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
-            temperature=0.0,  # Zero temperature for maximum factual accuracy
-            max_tokens=2000,  # Reduced to match 3000 char limit (~2k tokens)
-            retries=2
+            temperature=0.0,
+            max_tokens=2000,
+            retries=2,
+            timeout=60.0
         )
 
-        # Configuration
         self.results_per_query = 2
         self.max_pages_to_scrape = 5
         self.scrape_timeout = 10.0
-        # MEMORY CONSTRAINED: Render has 512MB RAM, each browser ~150MB
-        # With 2 concurrent browsers, causes OOM. Use sequential scraping.
-        self.max_concurrent_scrapes = 1  # Only 1 browser at a time
+        self.max_concurrent_scrapes = 2
 
         # Page-based summarization configuration
-        self.chunk_size = 30000  # Characters threshold for single-page direct summarization
+        self.chunk_size = 30000  # Single page chunk size for direct summarization
         self.max_page_content_size = 30000  # Maximum characters per page for batch summarization
         self.batch_max_output_chars = 1000  # Max chars per page summary
         self.final_max_output_chars = 3000  # Max chars for final summary
@@ -201,7 +199,7 @@ class WebScraperStep(BasePipelineStep):
             template_type=pipeline_data.template_type
         )
 
-        # Check for uncertainty markers in the summary
+        # Check for uncertainty markers in the summary; just for logging
         has_uncertainty = "[UNCERTAIN]" in final_content or "[SINGLE SOURCE]" in final_content
         if has_uncertainty:
             logfire.warning(
@@ -259,7 +257,7 @@ class WebScraperStep(BasePipelineStep):
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=True,
-                args=['--no-sandbox']  # Required for containers/serverless
+                args=['--no-sandbox']
             )
 
             try:
@@ -332,9 +330,10 @@ class WebScraperStep(BasePipelineStep):
             model="anthropic:claude-haiku-4-5",
             output_type=Summary,
             system_prompt=BATCH_SUMMARIZATION_SYSTEM_PROMPT,
-            temperature=0.0,  # Deterministic extraction
-            max_tokens=3000,  # ~4000 chars
-            retries=2
+            temperature=0.0,
+            max_tokens=3000,
+            retries=2,
+            timeout=60.0
         )
 
         user_prompt = create_batch_summarization_prompt(
@@ -565,7 +564,8 @@ Title: {page.title or 'N/A'}
             system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
             temperature=0.2,
             max_tokens=2500,
-            retries=2
+            retries=2,
+            timeout=60.0
         )
 
         final_prompt = create_final_summary_prompt(

@@ -25,6 +25,7 @@ from schemas.pipeline import (
 )
 from tasks.email_tasks import generate_email_task
 from celery_config import celery_app
+from utils.uuid_helpers import ensure_uuid
 
 
 router = APIRouter(prefix="/api/email", tags=["Email Generation"])
@@ -238,6 +239,15 @@ async def get_email(
         HTTPException 403: If user is not initialized (handled by dependency)
         HTTPException 404: If email doesn't exist or user doesn't own it
     """
+    # Validate UUID format early
+    try:
+        email_uuid = ensure_uuid(email_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid email ID format: {str(e)}"
+        )
+
     with logfire.span(
         "api.get_email",
         email_id=email_id,
@@ -245,7 +255,7 @@ async def get_email(
     ):
         # Query database for email with user_id filter (authorization)
         email = db.query(Email).filter(
-            Email.id == email_id,
+            Email.id == email_uuid,
             Email.user_id == current_user.id
         ).first()
 

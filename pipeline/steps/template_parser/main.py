@@ -61,7 +61,8 @@ class TemplateParserStep(BasePipelineStep):
             system_prompt=SYSTEM_PROMPT,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            retries=2
+            retries=2,
+            timeout=30.0  # 30 second timeout for template parsing
         )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:

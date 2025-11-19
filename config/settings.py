@@ -1,8 +1,6 @@
-"""
-Application configuration using Pydantic Settings.
-Loads and validates environment variables with type safety.
-"""
+"""Application configuration using Pydantic Settings."""
 
+import os
 from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -91,13 +89,6 @@ class Settings(BaseSettings):
         return self.environment.lower() == "production"
 
     @property
-    def cors_origins(self) -> List[str]:
-        """Get parsed CORS origins."""
-        if isinstance(self.allowed_origins, list):
-            return self.allowed_origins
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
-
-    @property
     def database_url(self) -> str:
         """
         Construct the SQLAlchemy database URL for Supabase direct connection.
@@ -111,6 +102,9 @@ class Settings(BaseSettings):
 
 # Create a singleton instance
 settings = Settings()
+
+# Ensure SDKs that read ANTHROPIC_API_KEY at import time see the configured value.
+os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
 
 
 def get_settings() -> "Settings":
