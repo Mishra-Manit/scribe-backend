@@ -30,9 +30,7 @@ class EmailComposerStep(BasePipelineStep):
 
     Responsibilities:
     - Combine data from Steps 1-3
-    - Generate email via Anthropic Claude API
-    - Validate email quality
-    - Retry if validation fails (max 2 attempts)
+    - Generate email via Anthropic Claude API (with agent-level retries)
     - Write to database
     - Update PipelineData
 
@@ -48,9 +46,8 @@ class EmailComposerStep(BasePipelineStep):
 
         # Configuration
         self.model = "anthropic:claude-sonnet-4-5"
-        self.temperature = 0.7  
+        self.temperature = 0.7
         self.max_tokens = 2000
-        self.max_retries = 2 
 
         # Create pydantic-ai agent for email composition
         # Using Sonnet for high-quality, creative email writing
@@ -59,7 +56,7 @@ class EmailComposerStep(BasePipelineStep):
             system_prompt=SYSTEM_PROMPT,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            retries=1,
+            retries=3,  # Agent handles retries internally
             timeout=60.0
         )
 
@@ -129,20 +126,23 @@ class EmailComposerStep(BasePipelineStep):
                 recipient_name=pipeline_data.recipient_name
             )
 
-            # Step 2 & 3: Generate and validate (with retries)
-            composed_email = await self._generate_with_validation(
-                user_prompt=user_prompt,
-                recipient_name=pipeline_data.recipient_name,
-                template_type=pipeline_data.template_type
+            # Step 2: Generate email via LLM (agent handles retries internally)
+            result = await self.composition_agent.run(user_prompt)
+            email_text = result.output.strip()
+
+            logfire.info(
+                "Email generated successfully",
+                word_count=len(email_text.split()),
+                length=len(email_text)
             )
 
-            if not composed_email:
-                # All retry attempts failed
-                return StepResult(
-                    success=False,
-                    step_name=self.step_name,
-                    error="Failed to generate valid email after all retry attempts"
-                )
+            # Step 3: Create composed email object
+            composed_email = ComposedEmail(
+                email_content=email_text,
+                generation_metadata={
+                    "model": self.model,
+                },
+            )
 
             # Step 4: Prepare metadata for database
             # Aggregate all pipeline metadata for JSONB storage
@@ -225,57 +225,3 @@ class EmailComposerStep(BasePipelineStep):
                 step_name=self.step_name,
                 error=f"Email composer error: {str(e)}"
             )
-
-    async def _generate_with_validation(
-        self,
-        user_prompt: str,
-        recipient_name: str,
-        template_type: TemplateType
-    ) -> Optional[ComposedEmail]:
-        """
-        Generate email with retry logic (no additional validation).
-        """
-        for attempt in range(self.max_retries + 1):
-            try:
-                logfire.info(
-                    "Generating email attempt",
-                    attempt=attempt + 1,
-                    max_attempts=self.max_retries + 1
-                )
-
-                result = await self.composition_agent.run(user_prompt)
-                email_text = result.output.strip()
-
-                logfire.info(
-                    "Email generated",
-                    attempt=attempt + 1,
-                    word_count=len(email_text.split()),
-                    length=len(email_text)
-                )
-
-                composed_email = ComposedEmail(
-                    email_content=email_text,
-                    generation_metadata={
-                        "attempts": attempt + 1,
-                        "model": self.model,
-                    },
-                )
-
-                return composed_email
-
-            except Exception as e:
-                logfire.error(
-                    "Error during email generation attempt",
-                    attempt=attempt + 1,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-
-                # Retry if attempts remain
-                if attempt < self.max_retries:
-                    continue
-                else:
-                    return None
-
-        # All attempts failed
-        return None

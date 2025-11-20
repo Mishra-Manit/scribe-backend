@@ -26,6 +26,7 @@ from schemas.pipeline import (
 from tasks.email_tasks import generate_email_task
 from celery_config import celery_app
 from utils.uuid_helpers import ensure_uuid
+from utils.celery_helpers import format_celery_error
 
 
 router = APIRouter(prefix="/api/email", tags=["Email Generation"])
@@ -158,29 +159,12 @@ async def get_task_status(
 
         elif result.state == "FAILURE":
             # Task failed - extract error message from metadata
-            if isinstance(result.info, dict):
-                # Extract from Celery's exception format
-                error_msg = result.info.get("exc_message", "Unknown error")
-                error_type = result.info.get("exc_type", "Error")
-                failed_step = result.info.get("failed_step")
-
-                # Build detailed error response
-                response_data["error"] = {
-                    "message": error_msg,
-                    "type": error_type,
-                    "failed_step": failed_step
-                }
-            else:
-                # Fallback for unexpected format
-                error_msg = str(result.info) if result.info else "Unknown error"
-                response_data["error"] = error_msg
+            response_data["error"] = format_celery_error(result.info)
 
             logfire.warning(
                 "Task failed",
                 task_id=task_id,
-                error=error_msg if isinstance(result.info, dict) else response_data["error"],
-                error_type=error_type if isinstance(result.info, dict) else None,
-                failed_step=failed_step if isinstance(result.info, dict) else None
+                error=response_data["error"]
             )
 
         elif result.state == "STARTED":

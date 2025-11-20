@@ -84,6 +84,35 @@ def reset_db() -> None:
     init_db()
 
 
+def sanitize_db_url(url: str) -> str:
+    """
+    Hide password in database URL for safe logging.
+
+    Replaces the password portion of a database connection URL with "***"
+    to prevent credentials from appearing in logs or error messages.
+    """
+    # No credentials present
+    if "@" not in url:
+        return url
+
+    try:
+        # Split protocol and rest of URL
+        protocol, rest = url.split("://", 1)
+
+        # Split credentials from host
+        credentials, host = rest.split("@", 1)
+
+        # Extract username (everything before first colon)
+        username = credentials.split(":", 1)[0]
+
+        # Rebuild URL with masked password
+        return f"{protocol}://{username}:***@{host}"
+
+    except ValueError:
+        # Malformed URL - return as-is to avoid hiding errors
+        return url
+
+
 def get_db_info() -> dict:
     """
     Get database connection information and status.
@@ -98,17 +127,7 @@ def get_db_info() -> dict:
     is_connected = check_db_connection()
 
     # Sanitize database URL (hide password)
-    db_url = settings.database_url
-    if "@" in db_url:
-        protocol, rest = db_url.split("://")
-        if "@" in rest:
-            credentials, host = rest.split("@")
-            username = credentials.split(":")[0] if ":" in credentials else credentials
-            db_url_sanitized = f"{protocol}://{username}:***@{host}"
-        else:
-            db_url_sanitized = db_url
-    else:
-        db_url_sanitized = db_url
+    db_url_sanitized = sanitize_db_url(settings.database_url)
 
     return {
         "status": "connected" if is_connected else "disconnected",
