@@ -1,6 +1,10 @@
 """
-Database base configuration and engine setup.
-Provides SQLAlchemy Base class and database engine.
+Database configuration and SQLAlchemy setup.
+
+This module provides the core database infrastructure:
+- SQLAlchemy engine for connection pooling
+- Session factory for database transactions
+- Declarative base for ORM models
 """
 
 from sqlalchemy import create_engine
