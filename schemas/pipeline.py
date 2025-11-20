@@ -10,7 +10,6 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Dict, Any
 
-from pipeline.models.core import TemplateType
 
 
 # ===================================================================
@@ -45,18 +44,13 @@ class GenerateEmailRequest(BaseModel):
         description="Research area or interest (e.g., 'machine learning')"
     )
 
-    template_type: TemplateType = Field(
-        ...,
-        description="Type of email: RESEARCH, BOOK, or GENERAL"
-    )
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "email_template": "Hey {{name}}, I loved your work on {{research}}!",
                 "recipient_name": "Dr. Jane Smith",
-                "recipient_interest": "machine learning",
-                "template_type": "research"
+                "recipient_interest": "machine learning"
             }
         }
     )

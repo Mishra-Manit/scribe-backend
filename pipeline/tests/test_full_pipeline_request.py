@@ -21,7 +21,7 @@ from database.session import create_session
 from models.email import Email
 from models.user import User
 from pipeline import create_email_pipeline
-from pipeline.models.core import PipelineData, TemplateType
+from pipeline.models.core import PipelineData
 from schemas.pipeline import GenerateEmailRequest
 
 
@@ -70,7 +70,7 @@ def _request_to_pipeline_data(
         email_template=request_payload.email_template,
         recipient_name=request_payload.recipient_name,
         recipient_interest=request_payload.recipient_interest,
-        template_type=request_payload.template_type,
+        template_type=None,
     )
 
 
@@ -98,7 +98,6 @@ async def test_full_pipeline_round_trip_creates_email_record():
         """.strip(),
         recipient_name="Dr. Alicia Gomez",
         recipient_interest="safe reinforcement learning and robotics",
-        template_type=TemplateType.RESEARCH,
     )
 
     user_id = _create_test_user()

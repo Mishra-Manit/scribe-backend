@@ -74,8 +74,7 @@ async def generate_email(
             "Email generation requested",
             user_id=str(current_user.id),
             recipient_name=request.recipient_name,
-            recipient_interest=request.recipient_interest,
-            template_type=request.template_type.value
+            recipient_interest=request.recipient_interest
         )
 
         # Dispatch Celery task to background worker
@@ -84,8 +83,7 @@ async def generate_email(
                 "user_id": str(current_user.id),
                 "email_template": request.email_template,
                 "recipient_name": request.recipient_name,
-                "recipient_interest": request.recipient_interest,
-                "template_type": request.template_type.value
+                "recipient_interest": request.recipient_interest
             },
             queue="email_default"  # Use default queue (could route to email_high for premium users)
         )
