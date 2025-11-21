@@ -65,10 +65,10 @@ class WebScraperStep(BasePipelineStep):
         self.max_concurrent_scrapes = 2
 
         # Page-based summarization configuration
-        self.chunk_size = 30000  # Single page chunk size for direct summarization
-        self.max_page_content_size = 30000  # Maximum characters per page for batch summarization
+        self.chunk_size = 10000  # Single page chunk size for direct summarization
+        self.max_page_content_size = 10000  # Maximum characters per page for batch summarization
         self.batch_max_output_chars = 1000  # Max chars per page summary
-        self.final_max_output_chars = 3000  # Max chars for final summary
+        self.final_max_output_chars = 2000  # Max chars for final summary
         self.max_batches_allowed = 5  # Maximum number of pages allowed for summarization
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
