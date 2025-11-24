@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # CORS Settings
     allowed_origins: str = Field(
-        default="http://localhost:3000",
+        default="http://localhost:3000, https://scribe.manitmishra.com",
         description="Comma-separated list of allowed CORS origins"
     )
 
