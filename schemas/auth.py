@@ -56,13 +56,14 @@ class UserResponse(BaseModel):
     User profile response schema.
 
     This is returned from our local database and includes
-    application-specific fields like generation_count.
+    application-specific fields like generation_count and template_count.
     """
 
     id: uuid.UUID
     email: EmailStr
     display_name: str | None
     generation_count: int
+    template_count: int
     created_at: datetime
 
     model_config = ConfigDict(
@@ -73,6 +74,7 @@ class UserResponse(BaseModel):
                 "email": "user@example.com",
                 "display_name": "John Doe",
                 "generation_count": 5,
+                "template_count": 3,
                 "created_at": "2024-01-13T10:30:00Z",
             }
         },

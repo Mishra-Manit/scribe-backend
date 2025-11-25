@@ -4,15 +4,40 @@
 
 Implement a feature allowing users to upload resumes (PDF) to Supabase Storage and generate personalized cold email templates using AI. The feature follows existing codebase patterns and architectural decisions.
 
+**Template Generation Limit**: Each user can generate a maximum of 5 templates. This limit is tracked in the database (`users.template_count`) and enforced by both backend (429 error) and frontend (disabled button). The frontend fetches the count from the API instead of using localStorage, ensuring the limit persists across devices and browsers.
+
 ## Architecture Decisions
 
 Based on user requirements and existing patterns:
 
-- **Upload Flow**: Frontend → Supabase Storage (direct upload via signed URLs from backend)
+- **Upload Flow**: Frontend → Supabase Storage (direct upload using frontend's authenticated Supabase client)
 - **Generation**: Synchronous API call (5-15 second response, like `/api/user/init`)
 - **Resume Policy**: Single resume per user (uploading new resume overwrites old)
 - **Template Mutability**: Immutable (create/delete only, no editing)
 - **Backend-First**: Backend validates JWT, performs all database operations
+- **Generation Tracking**: Database-backed (`users.template_count`) instead of localStorage for cross-device persistence
+
+## Migration from localStorage to Database Tracking
+
+**Current State** (localStorage-based):
+- Frontend stores `templateGenerations_${user.uid}` in localStorage
+- Limit only applies to single browser/device
+- Can be manipulated by user via DevTools
+- Not synchronized across sessions
+
+**New State** (database-backed):
+- `users.template_count` column tracks generations per user
+- Backend enforces limit with 429 error when count >= 5
+- Frontend fetches count from `/api/user/profile` endpoint
+- Limit persists across all devices and browsers
+- Single source of truth in database
+
+**Implementation Steps**:
+1. Add `template_count` column to `users` table (Phase 2)
+2. Backend increments count on template creation (Phase 7)
+3. Backend returns 429 when limit reached (Phase 7)
+4. Frontend fetches count from API instead of localStorage (Phase 9)
+5. Remove all localStorage read/write operations (Phase 9)
 
 ## Implementation Phases
 
@@ -24,7 +49,6 @@ Add Supabase Storage configuration:
 ```python
 # Supabase Storage
 supabase_storage_bucket: str = Field(default="resumes")
-storage_url_expiry_seconds: int = Field(default=3600)
 ```
 
 **File**: `.env` / `.env.example`
@@ -32,7 +56,6 @@ storage_url_expiry_seconds: int = Field(default=3600)
 Add environment variables (with defaults above, these are optional):
 ```
 SUPABASE_STORAGE_BUCKET=resumes
-STORAGE_URL_EXPIRY_SECONDS=3600
 ```
 
 ### Phase 2: Database Models (1 hour)
@@ -115,47 +138,6 @@ __all__ = ["User", "Email", "Template"]
 ```bash
 alembic revision --autogenerate -m "add templates table and template_count to users"
 alembic upgrade head
-```
-
-### Phase 3: Supabase Storage Integration (1 hour)
-
-**File**: `services/supabase.py`
-
-Add storage functions after existing client functions:
-```python
-def create_signed_upload_url(bucket: str, file_path: str, expires_in: int) -> dict:
-    """
-    Generate a signed URL for uploading files to Supabase Storage.
-
-    Args:
-        bucket: Storage bucket name
-        file_path: Path within bucket (e.g., "user_id/resume.pdf")
-        expires_in: URL expiry time in seconds
-
-    Returns:
-        dict with 'upload_url' and 'public_url'
-    """
-    client = get_supabase_client()
-    signed_url = client.storage.from_(bucket).create_signed_upload_url(file_path)
-    public_url = client.storage.from_(bucket).get_public_url(file_path)
-    return {
-        "upload_url": signed_url,
-        "public_url": public_url
-    }
-
-def get_public_url(bucket: str, file_path: str) -> str:
-    """Get public URL for a file in Supabase Storage."""
-    client = get_supabase_client()
-    return client.storage.from_(bucket).get_public_url(file_path)
-
-def delete_file(bucket: str, file_path: str) -> bool:
-    """Delete a file from Supabase Storage."""
-    try:
-        client = get_supabase_client()
-        client.storage.from_(bucket).remove([file_path])
-        return True
-    except Exception:
-        return False
 ```
 
 ### Phase 4: PDF Parsing Utility (1 hour)
@@ -323,39 +305,6 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 from datetime import datetime
 import uuid
 
-class UploadUrlRequest(BaseModel):
-    """Request schema for generating signed upload URL."""
-    filename: str = Field(..., min_length=1, max_length=255, description="Filename (must end with .pdf)")
-
-    @field_validator('filename')
-    @classmethod
-    def validate_pdf_extension(cls, v: str) -> str:
-        if not v.lower().endswith('.pdf'):
-            raise ValueError('Filename must end with .pdf')
-        return v
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {"filename": "resume.pdf"}
-        }
-    )
-
-class UploadUrlResponse(BaseModel):
-    """Response schema for signed upload URL."""
-    upload_url: str = Field(..., description="Signed URL for uploading file")
-    public_url: str = Field(..., description="Public URL for accessing file after upload")
-    expires_in: int = Field(..., description="URL expiry time in seconds")
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "upload_url": "https://...",
-                "public_url": "https://...",
-                "expires_in": 3600
-            }
-        }
-    )
-
 class GenerateTemplateRequest(BaseModel):
     """Request schema for generating a template."""
     pdf_url: str = Field(..., min_length=10, max_length=500, description="Public URL to resume PDF")
@@ -408,8 +357,13 @@ class ResumeUrlResponse(BaseModel):
 
 Update UserResponse schema to include `template_count`:
 ```python
-# Add to UserResponse class
+# Add to UserResponse class after generation_count
 template_count: int = Field(default=0, description="Number of templates generated")
+
+# Update example in model_config
+"generation_count": 5,
+"template_count": 3,  # ADD THIS LINE
+"created_at": "2024-01-13T10:30:00Z",
 ```
 
 ### Phase 7: API Endpoints (3 hours)
@@ -430,47 +384,14 @@ from models.template import Template
 from database import get_db
 from api.dependencies import get_current_user
 from schemas.template import (
-    UploadUrlRequest, UploadUrlResponse,
     GenerateTemplateRequest, TemplateResponse
 )
-from services.supabase import create_signed_upload_url, get_public_url
+from services.supabase import get_public_url
 from services.template_generator import generate_template_from_resume
 from utils.uuid_helpers import ensure_uuid
 from config import settings
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
-
-@router.post("/upload-url", response_model=UploadUrlResponse)
-async def get_upload_url(
-    request: UploadUrlRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Generate signed URL for uploading resume to Supabase Storage.
-
-    Single-resume policy: Always uploads to {user_id}/resume.pdf
-    """
-    with logfire.span("api.get_upload_url"):
-        file_path = f"{current_user.id}/resume.pdf"
-
-        try:
-            result = create_signed_upload_url(
-                bucket=settings.supabase_storage_bucket,
-                file_path=file_path,
-                expires_in=settings.storage_url_expiry_seconds
-            )
-
-            return UploadUrlResponse(
-                upload_url=result["upload_url"],
-                public_url=result["public_url"],
-                expires_in=settings.storage_url_expiry_seconds
-            )
-        except Exception as e:
-            logfire.error("Failed to create upload URL", error=str(e))
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to generate upload URL"
-            )
 
 @router.post("/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_template(
@@ -482,9 +403,18 @@ async def create_template(
     Generate template from resume and user instructions.
 
     Synchronous operation (5-15 seconds). Creates Template record and increments user.template_count.
+    
+    **Rate Limit**: Maximum 5 templates per user.
     """
     with logfire.span("api.create_template", user_id=str(current_user.id)):
         try:
+            # Check template generation limit (5 templates max)
+            if current_user.template_count >= 5:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Template generation limit reached. Maximum 5 templates allowed per user."
+                )
+            
             # Generate template
             template_text = await generate_template_from_resume(
                 pdf_url=request.pdf_url,
@@ -675,24 +605,95 @@ USING (
 );
 ```
 
+### Phase 9: Frontend Integration - Replace localStorage with API (1 hour)
+
+**Overview**: Replace localStorage-based template generation tracking with server-side tracking via the user profile API.
+
+**File**: `app/dashboard/template/page.tsx`
+
+Remove localStorage logic and use API:
+```typescript
+// REMOVE these lines (48-71):
+// useEffect(() => {
+//   if (user && user.uid) {
+//     const storageKey = `templateGenerations_${user.uid}`;
+//     const storedCount = localStorage.getItem(storageKey);
+//     ...
+//   }
+// }, [user]);
+
+// REPLACE with API call to get user profile:
+useEffect(() => {
+  const fetchUserProfile = async () => {
+    if (!user) return;
+    
+    try {
+      const response = await fetch(`${API_ENDPOINTS.base}/api/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${await user.getIdToken()}`,
+        },
+      });
+      
+      if (response.ok) {
+        const userData = await response.json();
+        const remaining = MAX_GENERATIONS - userData.template_count;
+        setGenerationsLeft(Math.max(0, remaining));
+      }
+    } catch (error) {
+      console.error('Failed to fetch user profile:', error);
+    }
+  };
+  
+  fetchUserProfile();
+}, [user]);
+
+// REMOVE localStorage updates (lines 96-101):
+// const newCount = generationsLeft - 1;
+// setGenerationsLeft(newCount);
+// if (user && user.uid) {
+//   localStorage.setItem(`templateGenerations_${user.uid}`, String(newCount));
+// }
+
+// REPLACE with optimistic UI update (backend will increment on success):
+// After successful template generation, decrement locally:
+setGenerationsLeft(prev => Math.max(0, prev - 1));
+```
+
+**Key Changes**:
+1. Fetch `template_count` from `/api/user/profile` on mount
+2. Calculate `generationsLeft = 5 - template_count`
+3. Remove all localStorage read/write operations
+4. Backend increments count automatically when template is created
+5. Frontend updates optimistically after successful generation
+
+**Benefits**:
+- Single source of truth (database)
+- Limit persists across devices/browsers
+- No localStorage manipulation
+- Consistent with email generation pattern
+
 ## Implementation Order
 
 1. **Phase 1**: Configuration (30 min)
 2. **Phase 2**: Database models + migration (1 hour)
-3. **Phase 3**: Supabase storage functions (1 hour)
+3. **Phase 3**: Supabase storage utility functions (15 min)
 4. **Phase 4**: PDF parsing utility (1 hour)
-5. **Phase 6**: API schemas (45 min) - *Do before Phase 5*
+5. **Phase 6**: API schemas (30 min) - *Do before Phase 5*
 6. **Phase 5**: Template generation service (2 hours)
-7. **Phase 7**: API endpoints (3 hours)
+7. **Phase 7**: API endpoints (2.5 hours)
 8. **Phase 8**: Supabase policies (15 min via dashboard)
+9. **Phase 9**: Frontend integration (1 hour)
 
-**Total: ~9.5 hours**
+**Total: ~9 hours**
 
 ## Testing Checklist
 
-- [ ] Create signed upload URL
-- [ ] Upload PDF via signed URL from frontend
-- [ ] Generate template with uploaded PDF
+**Backend Tests**:
+- [ ] Upload PDF directly from frontend to Supabase Storage
+- [ ] Generate template with uploaded PDF URL
+- [ ] Verify `template_count` increments in database after generation
+- [ ] Test 5-template limit (6th generation should return 429 error)
+- [ ] Get user profile returns correct `template_count`
 - [ ] List templates (pagination)
 - [ ] Get specific template
 - [ ] Delete template (verify count decrements)
@@ -701,15 +702,23 @@ USING (
 - [ ] Test with corrupted PDF (should fail gracefully)
 - [ ] Verify single-resume policy (upload overwrites)
 
+**Frontend Tests**:
+- [ ] Generation count loads from API on page mount
+- [ ] Button shows correct "X uses left" text
+- [ ] Button disables when limit reached
+- [ ] localStorage is NOT used (verify in DevTools)
+- [ ] Count persists across browser sessions/devices
+- [ ] Optimistic UI update after successful generation
+
 ## Security Considerations
 
 ✅ **Implemented**:
 - JWT validation + local database check
 - User ID from JWT only (never request body)
 - Queries filtered by user_id
-- Signed URLs with 1-hour expiration
+- Frontend uploads directly using authenticated Supabase client
 - 404 instead of 403 (prevents info leakage)
-- Input validation (filename, instructions length)
+- Input validation (pdf_url, instructions length)
 - Timeout on generation (45s)
 
 ⚠️ **To Configure in Supabase**:
@@ -748,3 +757,48 @@ USING (
 - Synchronous generation means users wait 5-15 seconds for response
 - Single-resume policy simplifies storage management
 - Templates are immutable (no edit endpoint needed)
+
+## Quick Reference: Template Generation Limit
+
+**Database Schema**:
+```sql
+-- users table
+template_count INTEGER NOT NULL DEFAULT 0
+```
+
+**Backend Endpoints**:
+```python
+# Get user profile (includes template_count)
+GET /api/user/profile
+Response: { "template_count": 3, ... }
+
+# Create template (increments template_count)
+POST /api/templates/
+- Returns 429 if template_count >= 5
+- Increments template_count on success
+
+# Delete template (decrements template_count)
+DELETE /api/templates/{template_id}
+- Decrements template_count (min 0)
+```
+
+**Frontend Integration**:
+```typescript
+// Fetch count on mount
+const response = await fetch('/api/user/profile');
+const { template_count } = await response.json();
+const generationsLeft = 5 - template_count;
+
+// Update UI after generation
+setGenerationsLeft(prev => Math.max(0, prev - 1));
+
+// Disable button when limit reached
+disabled={generationsLeft <= 0}
+```
+
+**Key Changes from localStorage**:
+- ❌ Remove: `localStorage.getItem('templateGenerations_${user.uid}')`
+- ❌ Remove: `localStorage.setItem('templateGenerations_${user.uid}', count)`
+- ✅ Add: Fetch from `/api/user/profile` on mount
+- ✅ Add: Backend enforces limit with 429 error
+- ✅ Benefit: Works across devices/browsers
