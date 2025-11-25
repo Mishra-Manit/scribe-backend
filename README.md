@@ -23,6 +23,18 @@ Scribe is a production-ready cold email platform built with FastAPI that uses a 
 
 ---
 
+## 📚 Documentation
+
+**Complete guides available in the [`docs/`](docs/) folder:**
+
+- **[Quick Start Guide](docs/QUICKSTART.MD)** - Get Scribe running in 5 minutes
+- **[Architecture Overview](docs/ARCHITECTURE.MD)** - System design and deployment
+- **[Pipeline Deep Dive](docs/PIPELINE.MD)** - 4-step email generation pipeline
+- **[Development Guide](docs/DEVELOPMENT.MD)** - Workflows, testing, and debugging
+- **[API Reference](docs/API_REFERENCE.MD)** - Complete REST API documentation
+
+---
+
 ## 🛠️ Tech Stack
 
 | Layer | Technology |

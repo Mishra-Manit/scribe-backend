@@ -487,3 +487,22 @@ pytest pipeline/steps/template_parser/test_template_parser.py
    - Check all `__init__.py` files exist in package hierarchy
    - Ensure running from project root (`/pythonserver`)
    - Use `pytest --collect-only` to test import without execution
+
+---
+
+## Documentation
+
+**Comprehensive guides available in the `docs/` folder:**
+
+- **[QUICKSTART.MD](docs/QUICKSTART.MD)** - Get Scribe running in 5 minutes with step-by-step setup
+- **[ARCHITECTURE.MD](docs/ARCHITECTURE.MD)** - System design, technology stack, deployment (Render.com), and observability
+- **[PIPELINE.MD](docs/PIPELINE.MD)** - Deep dive into the 4-step email generation pipeline with implementation details
+- **[DEVELOPMENT.MD](docs/DEVELOPMENT.MD)** - Developer workflows, testing strategies, debugging techniques, and code patterns
+- **[API_REFERENCE.MD](docs/API_REFERENCE.MD)** - Complete REST API documentation with authentication, endpoints, and examples
+
+**When to use each guide:**
+- **Setting up locally?** → Start with QUICKSTART.MD
+- **Understanding the system?** → Read ARCHITECTURE.MD
+- **Working on the pipeline?** → Reference PIPELINE.MD
+- **Writing code or tests?** → Use DEVELOPMENT.MD
+- **Integrating with the API?** → Check API_REFERENCE.MD
