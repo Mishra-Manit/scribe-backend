@@ -564,47 +564,6 @@ from api.routes import user_router, email_router, template_router
 app.include_router(template_router)
 ```
 
-### Phase 8: Supabase Storage Policies
-
-Configure in Supabase Dashboard:
-
-**Bucket Setup**:
-- Bucket name: `resumes`
-- Public: Yes (for read access)
-- File size limit: 5MB
-
-**Storage Policies** (SQL):
-```sql
--- Allow authenticated users to upload to their own folder
-CREATE POLICY "Users can upload to own folder"
-ON storage.objects FOR INSERT TO authenticated
-WITH CHECK (
-    bucket_id = 'resumes'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-);
-
--- Allow public read access
-CREATE POLICY "Public read access"
-ON storage.objects FOR SELECT TO public
-USING (bucket_id = 'resumes');
-
--- Allow users to update their own files
-CREATE POLICY "Users can update own files"
-ON storage.objects FOR UPDATE TO authenticated
-USING (
-    bucket_id = 'resumes'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-);
-
--- Allow users to delete their own files
-CREATE POLICY "Users can delete own files"
-ON storage.objects FOR DELETE TO authenticated
-USING (
-    bucket_id = 'resumes'
-    AND (storage.foldername(name))[1] = auth.uid()::text
-);
-```
-
 ### Phase 9: Frontend Integration - Replace localStorage with API (1 hour)
 
 **Overview**: Replace localStorage-based template generation tracking with server-side tracking via the user profile API.
@@ -672,44 +631,6 @@ setGenerationsLeft(prev => Math.max(0, prev - 1));
 - No localStorage manipulation
 - Consistent with email generation pattern
 
-## Implementation Order
-
-1. **Phase 1**: Configuration (30 min)
-2. **Phase 2**: Database models + migration (1 hour)
-3. **Phase 3**: Supabase storage utility functions (15 min)
-4. **Phase 4**: PDF parsing utility (1 hour)
-5. **Phase 6**: API schemas (30 min) - *Do before Phase 5*
-6. **Phase 5**: Template generation service (2 hours)
-7. **Phase 7**: API endpoints (2.5 hours)
-8. **Phase 8**: Supabase policies (15 min via dashboard)
-9. **Phase 9**: Frontend integration (1 hour)
-
-**Total: ~9 hours**
-
-## Testing Checklist
-
-**Backend Tests**:
-- [ ] Upload PDF directly from frontend to Supabase Storage
-- [ ] Generate template with uploaded PDF URL
-- [ ] Verify `template_count` increments in database after generation
-- [ ] Test 5-template limit (6th generation should return 429 error)
-- [ ] Get user profile returns correct `template_count`
-- [ ] List templates (pagination)
-- [ ] Get specific template
-- [ ] Delete template (verify count decrements)
-- [ ] Test authorization (can't access other user's templates)
-- [ ] Test with scanned PDF (should fail gracefully)
-- [ ] Test with corrupted PDF (should fail gracefully)
-- [ ] Verify single-resume policy (upload overwrites)
-
-**Frontend Tests**:
-- [ ] Generation count loads from API on page mount
-- [ ] Button shows correct "X uses left" text
-- [ ] Button disables when limit reached
-- [ ] localStorage is NOT used (verify in DevTools)
-- [ ] Count persists across browser sessions/devices
-- [ ] Optimistic UI update after successful generation
-
 ## Security Considerations
 
 ✅ **Implemented**:
@@ -720,10 +641,6 @@ setGenerationsLeft(prev => Math.max(0, prev - 1));
 - 404 instead of 403 (prevents info leakage)
 - Input validation (pdf_url, instructions length)
 - Timeout on generation (45s)
-
-⚠️ **To Configure in Supabase**:
-- 5MB file size limit in bucket settings
-- Proper MIME type validation in storage policies
 
 ## Critical Files Reference
 
