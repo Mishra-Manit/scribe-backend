@@ -62,7 +62,7 @@ class WebScraperStep(BasePipelineStep):
         self.results_per_query = 2
         self.max_pages_to_scrape = 5
         self.scrape_timeout = 10.0
-        self.max_concurrent_scrapes = 2
+        self.max_concurrent_scrapes = 1 # Lowered to stop server crashes
 
         # Page-based summarization configuration
         self.chunk_size = 10000  # Single page chunk size for direct summarization
