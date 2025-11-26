@@ -27,7 +27,7 @@ class ScrapedPage(BaseModel):
 
     content: str = Field(
         description="Cleaned text content from page",
-        max_length=50000
+        max_length=10000
     )
 
     word_count: int = Field(

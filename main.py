@@ -13,7 +13,7 @@ from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
 from observability.logfire_config import LogfireConfig
-from api.routes import user_router, email_router
+from api.routes import user_router, email_router, template_router
 import logfire
 
 
@@ -135,6 +135,9 @@ app.include_router(user_router)
 
 # Email generation endpoints (authentication required, uses Celery workers)
 app.include_router(email_router)
+
+# Template generation endpoints (authentication required, synchronous)
+app.include_router(template_router)
 
 
 if __name__ == "__main__":

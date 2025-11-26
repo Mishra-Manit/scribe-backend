@@ -54,7 +54,7 @@ async def scrape_url(
     url: str,
     browser: Browser,
     timeout: float = 10.0,
-    max_content_length: int = 500000  # 500KB limit
+    max_content_length: int = 10000  # Limit to 10,000 characters per page to match summarization
 ) -> Tuple[Optional[str], Optional[str]]:
     """
     Scrape text content from a URL using Playwright (headless browser).

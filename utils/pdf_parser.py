@@ -10,10 +10,6 @@ async def extract_text_from_url(pdf_url: str, timeout: int = 30) -> str:
     """
     Fetch PDF from URL and extract text content.
 
-    Args:
-        pdf_url: Public URL to PDF file in Supabase Storage
-        timeout: Request timeout in seconds (default: 30)
-
     Returns:
         Cleaned text content from PDF
 

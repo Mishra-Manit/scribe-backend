@@ -9,6 +9,11 @@ from schemas.pipeline import (
     TaskStatusResponse,
     EmailResponse,
 )
+from schemas.template import (
+    GenerateTemplateRequest,
+    TemplateResponse,
+    ResumeUrlResponse,
+)
 
 __all__ = [
     # Auth schemas
@@ -22,4 +27,9 @@ __all__ = [
     "GenerateEmailResponse",
     "TaskStatusResponse",
     "EmailResponse",
+
+    # Template schemas
+    "GenerateTemplateRequest",
+    "TemplateResponse",
+    "ResumeUrlResponse",
 ]
