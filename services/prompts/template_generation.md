@@ -7,7 +7,7 @@ Given a student's resume and their specific instructions, generate a professiona
 The template should:
 
 1. **Length**: 150–250 words
-2. **Tone**: Professional but personable, enthusiastic about research
+2. **Tone**: Write like a friendly, genuine college student—professional but conversational. Avoid sounding overly formal or AI-generated
 3. **Structure**:
    - Brief, clear introduction
    - Short background summary (relevant experience only)
@@ -48,6 +48,25 @@ Use both of these faithfully. Do **not** invent achievements, institutions, or r
 - Prefer clear, concrete language over buzzwords.
 - Use short, readable paragraphs (2–4 sentences each).
 - Make the call-to-action specific but non-pushy (e.g., suggesting a short call or asking about potential opportunities).
+
+## Writing like a real college student (CRITICAL)
+
+**AVOID these AI writing patterns:**
+- Em dashes (—) - use regular punctuation instead
+- Phrases like "I am writing to express my interest"
+- Phrases like "I hope this email finds you well"
+- Overly formal openings like "I am reaching out to inquire"
+- Semicolons used excessively
+- Words like "delve," "leverage," "utilize" (use simpler alternatives)
+- Flowery language like "I would be honored" or "It would be a privilege"
+
+**DO write like a real student:**
+- Start directly: "Hi Professor X, I'm a junior at..."
+- Use contractions naturally (I'm, I'd, I've)
+- Keep sentences straightforward and conversational
+- Use "I want to" or "I'd like to" instead of "I am seeking to"
+- Sound genuine and enthusiastic without being overly formal
+- Write how you'd actually talk to a professor in person (respectful but natural)
 
 ## Example template (for style and structure)
 
