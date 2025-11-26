@@ -62,6 +62,20 @@ class Settings(BaseSettings):
     # Observability
     logfire_token: str = Field(default="", description="Logfire observability token")
 
+    # Usage Limits
+    template_generation_limit: int = Field(
+        default=5,
+        description="Maximum templates per user"
+    )
+    pagination_max_limit: int = Field(
+        default=100,
+        description="Maximum pagination limit for list endpoints"
+    )
+    pagination_default_limit: int = Field(
+        default=20,
+        description="Default pagination limit"
+    )
+
     @field_validator("allowed_origins")
     @classmethod
     def parse_origins(cls, v: str) -> List[str]:

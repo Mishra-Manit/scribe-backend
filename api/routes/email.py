@@ -16,7 +16,7 @@ import logfire
 from models.user import User
 from models.email import Email
 from database import get_db
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, PaginationParams
 from schemas.pipeline import (
     GenerateEmailRequest,
     GenerateEmailResponse,
@@ -70,13 +70,6 @@ async def generate_email(
         user_id=str(current_user.id),
         recipient_name=request.recipient_name
     ):
-        logfire.info(
-            "Email generation requested",
-            user_id=str(current_user.id),
-            recipient_name=request.recipient_name,
-            recipient_interest=request.recipient_interest
-        )
-
         # Dispatch Celery task to background worker
         task = generate_email_task.apply_async(
             kwargs={
@@ -86,13 +79,6 @@ async def generate_email(
                 "recipient_interest": request.recipient_interest
             },
             queue="email_default"  # Use default queue (could route to email_high for premium users)
-        )
-
-        logfire.info(
-            "Task enqueued successfully",
-            task_id=task.id,
-            user_id=str(current_user.id),
-            queue="email_default"
         )
 
         return GenerateEmailResponse(task_id=task.id)
@@ -149,21 +135,10 @@ async def get_task_status(
         if result.state == "SUCCESS":
             # Task completed successfully
             response_data["result"] = result.result
-            logfire.info(
-                "Task completed successfully",
-                task_id=task_id,
-                email_id=result.result.get("email_id") if result.result else None
-            )
 
         elif result.state == "FAILURE":
             # Task failed - extract error message from metadata
             response_data["error"] = format_celery_error(result.info)
-
-            logfire.warning(
-                "Task failed",
-                task_id=task_id,
-                error=response_data["error"]
-            )
 
         elif result.state == "STARTED":
             # Task is running - include progress information
@@ -173,20 +148,10 @@ async def get_task_status(
                     "step_status": result.info.get("step_status"),
                     "step_timings": result.info.get("step_timings", {})
                 }
-                logfire.info(
-                    "Task in progress",
-                    task_id=task_id,
-                    current_step=result.info.get("current_step"),
-                    step_status=result.info.get("step_status")
-                )
 
         elif result.state == "PENDING":
             # Task queued or result expired
-            logfire.info(
-                "Task pending",
-                task_id=task_id,
-                note="Task may be queued or result expired after 1 hour"
-            )
+            pass
 
         return TaskStatusResponse(**response_data)
 
@@ -242,32 +207,19 @@ async def get_email(
         ).first()
 
         if not email:
-            logfire.warning(
-                "Email not found or unauthorized",
-                email_id=email_id,
-                user_id=str(current_user.id)
-            )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Email not found or you don't have permission to access it"
             )
-
-        logfire.info(
-            "Email retrieved successfully",
-            email_id=email_id,
-            user_id=str(current_user.id),
-            recipient_name=email.recipient_name
-        )
 
         return email
 
 
 @router.get("/", response_model=List[EmailResponse])
 async def get_email_history(
+    pagination: PaginationParams,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    limit: int = 20,
-    offset: int = 0
 ):
     """
     Get the authenticated user's email generation history.
@@ -281,10 +233,9 @@ async def get_email_history(
     Default limit is 20 emails per page.
 
     Args:
+        pagination: Pagination parameters (limit and offset, injected by dependency)
         current_user: Authenticated user from database (injected by dependency)
         db: Database session (injected by dependency)
-        limit: Maximum number of emails to return (default: 20, max: 100)
-        offset: Number of emails to skip (default: 0)
 
     Returns:
         List[EmailResponse]: List of email records owned by the user
@@ -294,9 +245,8 @@ async def get_email_history(
         HTTPException 403: If user is not initialized (handled by dependency)
         HTTPException 422: If limit/offset validation fails
     """
-    # Enforce maximum limit
-    if limit > 100:
-        limit = 100
+    limit = pagination["limit"]
+    offset = pagination["offset"]
 
     with logfire.span(
         "api.email_history",
@@ -310,13 +260,5 @@ async def get_email_history(
         ).order_by(
             Email.created_at.desc()
         ).limit(limit).offset(offset).all()
-
-        logfire.info(
-            "Email history retrieved",
-            user_id=str(current_user.id),
-            count=len(emails),
-            limit=limit,
-            offset=offset
-        )
 
         return emails

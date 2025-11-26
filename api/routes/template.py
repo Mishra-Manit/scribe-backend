@@ -1,6 +1,7 @@
 """Template management API endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from typing import List
 import logfire
@@ -8,10 +9,12 @@ import logfire
 from models.user import User
 from models.template import Template
 from database import get_db
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user, PaginationParams
 from schemas.template import GenerateTemplateRequest, TemplateResponse
 from services.template_generator import generate_template_from_resume
 from utils.uuid_helpers import ensure_uuid
+from utils.validators import validate_template_ownership
+from config.settings import settings
 
 
 router = APIRouter(prefix="/api/templates", tags=["Templates"])
@@ -41,49 +44,40 @@ async def create_template(
     """
     with logfire.span("api.create_template", user_id=str(current_user.id)):
         # Check template generation limit
-        if current_user.template_count >= 5:
-            logfire.warning(
-                "Template generation limit reached",
-                user_id=str(current_user.id),
-                template_count=current_user.template_count
-            )
+        if current_user.template_count >= settings.template_generation_limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Template generation limit reached. Maximum 5 templates allowed per user."
+                detail=f"Template generation limit reached. Maximum {settings.template_generation_limit} templates allowed per user."
             )
 
         try:
             # Generate template (synchronous, 5-15 seconds)
-            logfire.info(
-                "Starting template generation",
-                user_id=str(current_user.id),
-                pdf_url=request.pdf_url
-            )
-
             template_text = await generate_template_from_resume(
-                pdf_url=request.pdf_url,
+                pdf_url=str(request.pdf_url),
                 user_instructions=request.user_instructions
             )
 
             # Create database record
             new_template = Template(
                 user_id=current_user.id,
-                pdf_url=request.pdf_url,
+                pdf_url=str(request.pdf_url),
                 template_text=template_text,
                 user_instructions=request.user_instructions
             )
 
             db.add(new_template)
-            current_user.template_count += 1
+            db.flush()  # Get template ID before updating counter
+
+            # Atomic counter increment (prevents race conditions)
+            db.execute(
+                update(User)
+                .where(User.id == current_user.id)
+                .values(template_count=User.template_count + 1)
+            )
+
             db.commit()
             db.refresh(new_template)
-
-            logfire.info(
-                "Template created successfully",
-                template_id=str(new_template.id),
-                user_id=str(current_user.id),
-                new_template_count=current_user.template_count
-            )
+            db.refresh(current_user)  # Refresh to get updated counter
 
             return new_template
 
@@ -116,19 +110,17 @@ async def create_template(
 
 @router.get("/", response_model=List[TemplateResponse])
 async def list_templates(
+    pagination: PaginationParams,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    limit: int = 20,
-    offset: int = 0
 ):
     """
     List user's templates (paginated, newest first).
 
     Args:
+        pagination: Pagination parameters (limit and offset, injected by dependency)
         current_user: Authenticated user (injected by dependency)
         db: Database session (injected by dependency)
-        limit: Maximum number of templates to return (default: 20, max: 100)
-        offset: Number of templates to skip (default: 0)
 
     Returns:
         List[TemplateResponse]: List of user's templates
@@ -137,8 +129,8 @@ async def list_templates(
         HTTPException 401: If JWT token is invalid
         HTTPException 403: If user is not initialized
     """
-    if limit > 100:
-        limit = 100
+    limit = pagination["limit"]
+    offset = pagination["offset"]
 
     with logfire.span(
         "api.list_templates",
@@ -151,14 +143,6 @@ async def list_templates(
         ).order_by(
             Template.created_at.desc()
         ).limit(limit).offset(offset).all()
-
-        logfire.info(
-            "Templates retrieved",
-            user_id=str(current_user.id),
-            count=len(templates),
-            limit=limit,
-            offset=offset
-        )
 
         return templates
 
@@ -198,27 +182,11 @@ async def get_template(
         template_id=template_id,
         user_id=str(current_user.id)
     ):
-        # Query with authorization filter
-        template = db.query(Template).filter(
-            Template.id == template_uuid,
-            Template.user_id == current_user.id
-        ).first()
-
-        if not template:
-            logfire.warning(
-                "Template not found or unauthorized",
-                template_id=template_id,
-                user_id=str(current_user.id)
-            )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Template not found"
-            )
-
-        logfire.info(
-            "Template retrieved",
-            template_id=template_id,
-            user_id=str(current_user.id)
+        # Validate ownership and retrieve template
+        template = validate_template_ownership(
+            db=db,
+            template_id=template_uuid,
+            user_id=current_user.id
         )
 
         return template

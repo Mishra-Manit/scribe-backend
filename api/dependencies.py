@@ -5,7 +5,8 @@ This module provides reusable dependencies that validate JWT tokens,
 verify user authentication, and inject user data into route handlers.
 """
 
-from fastapi import Depends, HTTPException, status, Security
+from typing import Annotated
+from fastapi import Depends, HTTPException, status, Security, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from gotrue.errors import AuthApiError
@@ -14,6 +15,7 @@ from services.supabase import get_supabase_client
 from database import get_db
 from models.user import User
 from schemas.auth import SupabaseUser
+from config.settings import settings
 
 
 # HTTP Bearer security scheme (checks for "Authorization: Bearer ..." header)
@@ -119,3 +121,29 @@ async def get_current_user(
         )
 
     return db_user
+
+
+def pagination_params(
+    limit: int = Query(default=None, ge=1),
+    offset: int = Query(default=0, ge=0)
+) -> dict:
+    """
+    Reusable pagination parameters with automatic validation.
+
+    Args:
+        limit: Maximum records to return (configurable via settings, default from config)
+        offset: Number of records to skip (default 0)
+
+    Returns:
+        dict with 'limit' and 'offset' keys
+    """
+    # Use configured defaults and enforce maximum
+    if limit is None:
+        limit = settings.pagination_default_limit
+    limit = min(limit, settings.pagination_max_limit)
+
+    return {"limit": limit, "offset": offset}
+
+
+# Type alias for dependency injection
+PaginationParams = Annotated[dict, Depends(pagination_params)]

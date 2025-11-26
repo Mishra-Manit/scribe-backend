@@ -12,7 +12,6 @@ from schemas.pipeline import (
 from schemas.template import (
     GenerateTemplateRequest,
     TemplateResponse,
-    ResumeUrlResponse,
 )
 
 __all__ = [
@@ -31,5 +30,4 @@ __all__ = [
     # Template schemas
     "GenerateTemplateRequest",
     "TemplateResponse",
-    "ResumeUrlResponse",
 ]
