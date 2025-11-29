@@ -93,7 +93,7 @@ class ArxivHelperStep(BasePipelineStep):
                 recipient_name=pipeline_data.recipient_name
             )
 
-            papers = search_arxiv(
+            papers = await search_arxiv(
                 author_name=pipeline_data.recipient_name
             )
 
