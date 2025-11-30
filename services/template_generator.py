@@ -1,11 +1,12 @@
 """Template generation service using AI."""
 
+import re
 import logfire
 from pathlib import Path
 from utils.llm_agent import run_agent
 from utils.pdf_parser import extract_text_from_url
 
-# Load system prompt from file (co-located with this service)
+# Load system prompt from markdown file
 PROMPT_PATH = Path(__file__).parent / "prompts" / "template_generation.md"
 
 
@@ -47,7 +48,14 @@ async def generate_template_from_resume(
 **USER INSTRUCTIONS:**
 {user_instructions}
 
-Generate a cold email template following the guidelines."""
+**CRITICAL STYLE REQUIREMENTS:**
+- Use ONLY commas, periods, and occasional colons for punctuation
+- Write exactly how a college student would speak to a professor in person
+- Start directly. For example: "Hi Professor [Name], I'm a [year] at [school]..."
+- Use contractions naturally (I'm, I'd, I've)
+- Keep sentences straightforward and conversational
+
+Generate a cold email template following all guidelines above."""
 
             # Generate template using AI
             with logfire.span("template_generation.llm_call"):
@@ -56,12 +64,23 @@ Generate a cold email template following the guidelines."""
                     prompt=user_prompt,
                     model=model,
                     system_prompt=system_prompt,
-                    temperature=0.8,  # Creative writing
+                    temperature=0.6,
                     max_tokens=1500,
                     retries=3,
                     timeout=45.0
                 )
                 logfire.info("Template generated", length=len(template_text))
+
+            # Post-process: Remove em dashes
+            with logfire.span("template_generation.post_process"):
+                if '—' in template_text:
+                    logfire.warn(
+                        "Em dash detected in template, applying post-processing",
+                        has_em_dash=True
+                    )
+                    # Replace em dashes with commas
+                    template_text = re.sub(r'\s*—\s*', ', ', template_text)
+                    logfire.info("Em dashes removed via post-processing")
 
             return template_text
 
