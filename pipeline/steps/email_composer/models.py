@@ -14,6 +14,10 @@ class ComposedEmail(BaseModel):
         min_length=1
     )
 
+    is_confident: bool = Field(
+        default=False,
+        description="True if sufficient context was available for personalization"
+    )
 
     generation_metadata: dict = Field(
         description="Metadata about generation process",

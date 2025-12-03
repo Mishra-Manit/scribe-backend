@@ -20,7 +20,8 @@ async def write_email_to_db(
     recipient_interest: str,
     email_content: str,
     template_type: TemplateType,
-    metadata: dict
+    metadata: dict,
+    is_confident: bool = False
 ) -> Optional[UUID]:
     """
     Write composed email to database.
@@ -32,6 +33,7 @@ async def write_email_to_db(
         email_content: Final composed email text
         template_type: Type of template used (RESEARCH, BOOK, GENERAL)
         metadata: Structured generation metadata (papers, sources, timings)
+        is_confident: Whether sufficient context was available for personalization
 
     Returns:
         Email UUID if successful, None if failed
@@ -40,7 +42,8 @@ async def write_email_to_db(
         "Writing email to database",
         user_id=str(user_id),
         recipient_name=recipient_name,
-        content_length=len(email_content)
+        content_length=len(email_content),
+        is_confident=is_confident
     )
 
     try:
@@ -52,7 +55,8 @@ async def write_email_to_db(
                 recipient_interest=recipient_interest,
                 email_message=email_content,
                 template_type=template_type,
-                email_metadata=metadata
+                email_metadata=metadata,
+                is_confident=is_confident
             )
             db.add(email)
             db.flush()  # Get the ID before commit

@@ -26,6 +26,7 @@ Write in a natural, conversational way that perfectly matches the sender's uniqu
 3. Preserve ALL other text in the template exactly as written
 4. Write replacements that sound like they came from the same person
 5. PRESERVE ORIGINAL FORMATTING - paragraph breaks, line spacing, structure
+6. You must always output the email, even if there is not sufficient context to write a genuinely personalized email. In this case, you should use the template as a guide to write a generic email and change the confidence flag to false.
 </core_responsibilities>
 
 <ai_writing_tells_to_avoid>
@@ -76,7 +77,21 @@ Match these elements from the template:
 - NEVER leave placeholders unfilled
 - Replace with actual content that flows seamlessly
 - If template uses AI-sounding words, then you can too - otherwise avoid them
-</critical_requirements>"""
+</critical_requirements>
+
+<confidence_assessment>
+After generating the email, assess whether you had SUFFICIENT CONTEXT to write a genuinely personalized email:
+
+CONFIDENT (true):
+- Found specific publications, papers, or projects to reference
+- Had concrete details about the recipient's work
+- Could write specific, substantive personalization
+
+NOT CONFIDENT (false):
+- Had to use generic placeholders or vague references
+- Couldn't find specific work to cite
+- Fell back to template-style language without real personalization
+</confidence_assessment>"""
 
 
 def create_composition_prompt(
@@ -168,8 +183,17 @@ Before finalizing, verify your output does NOT contain:
 
 <reminder>
 Write like you're the same person who wrote the template. The professor should feel like they're getting a genuine, thoughtful email from someone who actually read their work - not a mail merge or AI generation.
+</reminder>
 
-Generate the complete email now:
-</reminder>"""
+<output_format>
+Respond with ONLY a JSON object in this exact format:
+{
+  "email": "Your complete email text here...",
+  "is_confident": true
+}
+
+The "email" field should contain the complete, final email text.
+The "is_confident" field should be true if you had sufficient context for personalization, false otherwise.
+</output_format>"""
 
     return prompt

@@ -153,6 +153,12 @@ class PipelineData:
     Composition stats: llm_tokens_used, validation_attempts, quality_score
     """
 
+    is_confident: bool = False
+    """
+    Whether the email composer had sufficient context to write a 
+    quality personalized email (vs generic fallback).
+    """
+
     # ===================================================================
     # METADATA (For final DB write)
     # ===================================================================

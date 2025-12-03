@@ -11,6 +11,7 @@ Responsibilities:
 - Update PipelineData with final email
 """
 
+import json
 import logfire
 from typing import Optional
 
@@ -128,17 +129,34 @@ class EmailComposerStep(BasePipelineStep):
 
             # Step 2: Generate email via LLM (agent handles retries internally)
             result = await self.composition_agent.run(user_prompt)
-            email_text = result.output.strip()
+            response_text = result.output.strip()
+
+            # Parse JSON response
+            try:
+                parsed = json.loads(response_text)
+                email_text = parsed["email"]
+                is_confident = parsed.get("is_confident", False)
+            except (json.JSONDecodeError, KeyError) as e:
+                logfire.warning(
+                    "Failed to parse JSON response, falling back to plain text",
+                    error=str(e),
+                    response_preview=response_text[:200]
+                )
+                # Fallback: treat entire response as email text
+                email_text = response_text
+                is_confident = False
 
             logfire.info(
                 "Email generated successfully",
                 word_count=len(email_text.split()),
-                length=len(email_text)
+                length=len(email_text),
+                is_confident=is_confident
             )
 
             # Step 3: Create composed email object
             composed_email = ComposedEmail(
                 email_content=email_text,
+                is_confident=is_confident,
                 generation_metadata={
                     "model": self.model,
                 },
@@ -172,7 +190,8 @@ class EmailComposerStep(BasePipelineStep):
                 recipient_interest=pipeline_data.recipient_interest,
                 email_content=composed_email.email_content,
                 template_type=pipeline_data.template_type,
-                metadata=database_metadata
+                metadata=database_metadata,
+                is_confident=composed_email.is_confident
             )
 
             if not email_id:
@@ -193,12 +212,14 @@ class EmailComposerStep(BasePipelineStep):
 
             # Step 7: Update PipelineData
             pipeline_data.final_email = composed_email.email_content
+            pipeline_data.is_confident = composed_email.is_confident
 
             pipeline_data.composition_metadata = {
                 "email_id": str(email_id),
                 "word_count": len(composed_email.email_content.split()),
                 "model": self.model,
                 "temperature": self.temperature,
+                "is_confident": composed_email.is_confident,
                 **composed_email.generation_metadata
             }
 

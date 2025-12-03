@@ -137,6 +137,10 @@ class EmailResponse(BaseModel):
         serialization_alias="metadata",
         description="Structured generation metadata (papers, sources, timings)"
     )
+    is_confident: bool = Field(
+        default=False,
+        description="Whether sufficient context was available for personalization"
+    )
     created_at: datetime
 
     model_config = ConfigDict(
@@ -154,6 +158,7 @@ class EmailResponse(BaseModel):
                     "sources": ["https://university.edu/faculty/smith"],
                     "generation_time": 4.2
                 },
+                "is_confident": True,
                 "created_at": "2025-01-13T10:30:00Z"
             }
         }

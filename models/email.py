@@ -6,7 +6,7 @@ Represents the emails table in the database.
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum, text
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum, Boolean, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -98,6 +98,13 @@ class Email(Base):
         comment="Structured generation metadata (papers, sources, timings)"
     )
 
+    is_confident = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether sufficient context was available for personalization"
+    )
+
     # Relationships
     user = relationship(
         "User",
@@ -133,5 +140,6 @@ class Email(Base):
             "email_message": self.email_message,
             "template_type": self.template_type.value if self.template_type else None,
             "metadata": self.email_metadata or {},
+            "is_confident": self.is_confident,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
