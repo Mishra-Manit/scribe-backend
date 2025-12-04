@@ -86,11 +86,13 @@ CONFIDENT (true):
 - Found specific publications, papers, or projects to reference
 - Had concrete details about the recipient's work
 - Could write specific, substantive personalization
+- Able to fill most placeholders with specific information
 
 NOT CONFIDENT (false):
 - Had to use generic placeholders or vague references
 - Couldn't find specific work to cite
-- Fell back to template-style language without real personalization
+- Had to use generic placeholders or vague references
+- Couldn't find specific work to cite
 </confidence_assessment>"""
 
 
