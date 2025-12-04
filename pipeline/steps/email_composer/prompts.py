@@ -186,11 +186,13 @@ Write like you're the same person who wrote the template. The professor should f
 </reminder>
 
 <output_format>
-Respond with ONLY a JSON object in this exact format:
-{
+Respond with ONLY a raw JSON object in this exact format (do NOT wrap in markdown code fences):
+{{
   "email": "Your complete email text here...",
   "is_confident": true
-}
+}}
+
+IMPORTANT: Return the raw JSON directly - no code fences, no markdown formatting, no ```json wrapper.
 
 The "email" field should contain the complete, final email text.
 The "is_confident" field should be true if you had sufficient context for personalization, false otherwise.
