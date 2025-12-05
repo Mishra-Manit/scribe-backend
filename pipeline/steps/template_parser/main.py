@@ -1,11 +1,4 @@
-"""
-Template Parser Step - Phase 5 Step 1
-
-Analyzes email templates using Anthropic Claude to extract:
-- Search terms for web scraping
-- Template type classification (RESEARCH/BOOK/GENERAL)
-- Template placeholders that require personalization
-"""
+"""Template parser step using Claude to extract search terms and classify template type."""
 
 import logfire
 from typing import Optional
@@ -23,22 +16,12 @@ from .utils import extract_placeholders
 
 class TemplateParserStep(BasePipelineStep):
     """
-    Step 1: Parse email template and extract metadata.
+    Parse template using Claude to extract search terms and classify type.
 
-    Responsibilities:
-    - Call Anthropic Claude API for template analysis
-    - Extract search terms for web scraping
-    - Classify template type (RESEARCH/BOOK/GENERAL)
-    - Update PipelineData with results
-
-    Updates PipelineData fields:
-    - search_terms: List[str]
-    - template_type: TemplateType
-    - template_analysis: Dict[str, Any]
+    Sets: search_terms, template_type, template_analysis
     """
 
     def __init__(self):
-        """Initialize template parser step."""
         super().__init__(step_name="template_parser")
 
         # Model configuration
@@ -66,14 +49,7 @@ class TemplateParserStep(BasePipelineStep):
         )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """
-        Validate that required input fields are present.
-
-        Required:
-        - email_template: Non-empty string
-        - recipient_name: Non-empty string
-        - recipient_interest: Non-empty string
-        """
+        """Validate required fields: email_template, recipient_name, recipient_interest."""
         if not (pipeline_data.email_template or '').strip():
             return "email_template is empty or missing"
 
@@ -93,16 +69,7 @@ class TemplateParserStep(BasePipelineStep):
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
-        """
-        Execute template parsing logic.
-
-        Steps:
-        1. Extract local placeholders (for validation)
-        2. Call Anthropic API with structured output
-        3. Validate response with Pydantic
-        4. Update PipelineData
-        5. Return success result
-        """
+        """Parse template with Claude API and update PipelineData with search terms and type."""
         # Extract placeholders locally (for comparison)
         local_placeholders = extract_placeholders(pipeline_data.email_template)
         placeholder_count = len(local_placeholders)

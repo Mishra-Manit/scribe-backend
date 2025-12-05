@@ -1,9 +1,4 @@
-"""
-FastAPI dependencies for authentication and authorization.
-
-This module provides reusable dependencies that validate JWT tokens,
-verify user authentication, and inject user data into route handlers.
-"""
+"""Authentication and authorization dependencies for JWT validation."""
 
 from typing import Annotated
 from fastapi import Depends, HTTPException, status, Security, Query
@@ -26,20 +21,10 @@ async def get_supabase_user(
     creds: HTTPAuthorizationCredentials = Security(security_scheme),
 ) -> SupabaseUser:
     """
-    Dependency to validate Supabase JWT token and return user data.
-
-    This validates the token using the Supabase service client's remote
-    validation endpoint. It DOES NOT check the local database.
-
-    Args:
-        creds: HTTP Authorization credentials (Bearer token)
-
-    Returns:
-        SupabaseUser: Validated user data from token (id and email)
+    Validate JWT token via Supabase API. Does not check local database.
 
     Raises:
-        HTTPException 401: If token is invalid, expired, or missing
-        HTTPException 503: If Supabase client is not initialized
+        HTTPException: 401 if token invalid, 503 if Supabase unavailable
     """
     token = creds.credentials
 
@@ -94,21 +79,10 @@ async def get_current_user(
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Dependency to get the authenticated user from the local database.
-
-    This depends on get_supabase_user(), so the JWT token is already
-    validated before this function is called. It then fetches the user
-    from our local database.
-
-    Args:
-        supabase_user: Validated user data from JWT token
-        db: Database session
-
-    Returns:
-        User: User model instance from local database
+    Get authenticated user from local database after JWT validation.
 
     Raises:
-        HTTPException 403: If user exists in Supabase but not initialized in our database
+        HTTPException: 403 if user not initialized (requires POST /api/user/init)
     """
     # Query local database for user
     db_user = db.query(User).filter(User.id == supabase_user.id).first()
@@ -127,16 +101,7 @@ def pagination_params(
     limit: int = Query(default=None, ge=1),
     offset: int = Query(default=0, ge=0)
 ) -> dict:
-    """
-    Reusable pagination parameters with automatic validation.
-
-    Args:
-        limit: Maximum records to return (configurable via settings, default from config)
-        offset: Number of records to skip (default 0)
-
-    Returns:
-        dict with 'limit' and 'offset' keys
-    """
+    """Reusable pagination with configurable defaults and max limits from settings."""
     # Use configured defaults and enforce maximum
     if limit is None:
         limit = settings.pagination_default_limit

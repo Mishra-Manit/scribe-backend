@@ -1,7 +1,4 @@
-"""
-Email model for SQLAlchemy ORM.
-Represents the emails table in the database.
-"""
+"""Email model for generated personalized emails."""
 
 from uuid import uuid4
 
@@ -14,20 +11,7 @@ from database.base import Base
 from pipeline.models.core import TemplateType
 
 class Email(Base):
-    """
-    Email model representing generated emails in the system.
-
-    Attributes:
-        id (UUID): Primary key, auto-generated
-        user_id (UUID): Foreign key to users table
-        recipient_name (str): Name of the email recipient (professor)
-        recipient_interest (str): Research interest/topic for personalization
-        email_message (str): The generated email content
-        created_at (datetime): Timestamp when email was generated
-
-    Relationships:
-        user: Many-to-one relationship with User model
-    """
+    """Generated personalized email with metadata and confidence score. Owned by User."""
 
     __tablename__ = "emails"
 

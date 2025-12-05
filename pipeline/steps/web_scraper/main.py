@@ -1,12 +1,4 @@
-"""
-Web Scraper Step - Phase 5 Step 2
-
-Performs web scraping using search terms from Step 1:
-- Google Custom Search API to find URLs
-- Async scraping with Playwright (headless browser)
-- Content cleaning and summarization
-- Updates PipelineData with results
-"""
+"""Web scraper using Google Search and Playwright to extract professor information."""
 
 import logfire
 import asyncio
@@ -24,23 +16,12 @@ from .prompts import SUMMARIZATION_SYSTEM_PROMPT, create_summarization_prompt
 
 class WebScraperStep(BasePipelineStep):
     """
-    Step 2: Web scraping and content extraction.
+    Scrape and summarize professor info via Google Search + Playwright.
 
-    Responsibilities:
-    - Use search_terms from Step 1
-    - Perform Google Custom Search
-    - Scrape webpage content asynchronously
-    - Clean and summarize content (max 5000 chars)
-    - Update PipelineData
-
-    Updates PipelineData fields:
-    - scraped_content: str
-    - scraped_urls: List[str]
-    - scraping_metadata: Dict[str, Any]
+    Sets: scraped_content, scraped_urls, scraping_metadata
     """
 
     def __init__(self):
-        """Initialize web scraper step."""
         super().__init__(step_name="web_scraper")
 
         # Initialize clients
@@ -72,14 +53,7 @@ class WebScraperStep(BasePipelineStep):
         self.max_batches_allowed = 5  # Maximum number of pages allowed for summarization
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """
-        Validate prerequisites from Step 1.
-
-        Required:
-        - search_terms: Non-empty list
-        - template_type: Must be set
-        - recipient_name and recipient_interest: Present
-        """
+        """Validate search_terms, template_type, and recipient_name from Step 1."""
         if not pipeline_data.search_terms:
             return "search_terms is empty (Step 1 must run first)"
 
@@ -92,16 +66,7 @@ class WebScraperStep(BasePipelineStep):
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
-        """
-        Execute web scraping logic.
-
-        Steps:
-        1. Perform Google Custom Search with all search terms
-        2. Scrape URLs asynchronously (with concurrency limit)
-        3. Clean and validate scraped content
-        4. Summarize content using Anthropic (if too long)
-        5. Update PipelineData
-        """
+        """Search Google, scrape URLs, and summarize content for PipelineData."""
         # Step 1: Google Custom Search
         logfire.info(
             "Performing Google searches",

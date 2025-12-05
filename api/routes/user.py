@@ -1,9 +1,4 @@
-"""
-User management API endpoints.
-
-This module provides endpoints for user profile initialization and retrieval.
-All endpoints require valid Supabase JWT authentication.
-"""
+"""User profile initialization and retrieval endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -25,27 +20,9 @@ async def initialize_user_profile(
     db: Session = Depends(get_db),
 ):
     """
-    Initialize a user profile in the local database.
+    Initialize user profile after Supabase signup.
 
-    This endpoint should be called ONCE after a user signs up via Supabase Auth.
-    It creates a corresponding user record in our local database with the user's
-    Supabase Auth ID.
-
-    **Authentication**: Requires valid Supabase JWT token in Authorization header.
-
-    **Idempotent**: If the user already exists, returns the existing profile.
-
-    Args:
-        user_init: Initialization data with display_name (auto-derived from OAuth by frontend)
-        supabase_user: Validated user from JWT token (injected by dependency)
-        db: Database session (injected by dependency)
-
-    Returns:
-        UserResponse: Created or existing user profile
-
-    Raises:
-        HTTPException 500: If database operation fails
-        HTTPException 401: If JWT token is invalid (handled by dependency)
+    Idempotent - returns existing profile if already initialized.
     """
     # Check if user already exists
     existing_user = db.query(User).filter(User.id == supabase_user.id).first()
@@ -91,24 +68,7 @@ async def initialize_user_profile(
 async def get_user_profile(
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Get the current authenticated user's profile.
-
-    This endpoint returns the full user profile from our local database.
-    The user must have been initialized via POST /api/user/init first.
-
-    **Authentication**: Requires valid Supabase JWT token in Authorization header.
-
-    Args:
-        current_user: Authenticated user from database (injected by dependency)
-
-    Returns:
-        UserResponse: User profile with all fields
-
-    Raises:
-        HTTPException 401: If JWT token is invalid (handled by dependency)
-        HTTPException 403: If user is not initialized in database (handled by dependency)
-    """
+    """Get current user's profile. Requires initialized account."""
     # The dependency already fetched and validated the user
     # If we reach this point, current_user is a valid User model instance
     return current_user

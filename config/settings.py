@@ -5,19 +5,11 @@ from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# NOTE: logfire.configure() was removed from here to prevent conflicts with test configuration.
-# Logfire should be configured once at application startup (main.py via observability/logfire_config.py)
-# or in pytest hooks (conftest.py). Calling configure() at module import time creates a local-only
-# instance that prevents proper remote logging and pydantic-ai instrumentation.
+# NOTE: Logfire configured in main.py/conftest.py, not here (prevents test conflicts)
 
 
 class Settings(BaseSettings):
-    """
-    Application settings loaded from environment variables.
-
-    All settings are validated at startup to ensure the application
-    has the required configuration before it starts.
-    """
+    """Application settings loaded from environment variables with validation."""
 
     model_config = SettingsConfigDict(
         env_file=".env",

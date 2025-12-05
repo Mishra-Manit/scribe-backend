@@ -1,11 +1,4 @@
-"""
-ArXiv Helper Step - Phase 5 Step 3
-
-Conditionally fetches academic papers from ArXiv API:
-- Only runs if template_type == RESEARCH
-- Searches for papers by recipient
-- Updates PipelineData with paper information
-"""
+"""Conditional step to fetch academic papers from ArXiv if template_type is RESEARCH."""
 
 import logfire
 from typing import Optional
@@ -18,31 +11,16 @@ from .utils import search_arxiv
 
 class ArxivHelperStep(BasePipelineStep):
     """
-    Step 3: Fetch academic papers from ArXiv (conditional).
+    Fetch ArXiv papers for RESEARCH templates only.
 
-    Responsibilities:
-    - Check if template_type == RESEARCH
-    - Search ArXiv for papers by recipient
-    - Update PipelineData with paper info (title, authors, abstract, published_date, arxiv_url)
-
-    Updates PipelineData fields:
-    - arxiv_papers: List[Dict[str, Any]]
-    - enrichment_metadata: Dict[str, Any]
+    Sets: arxiv_papers, enrichment_metadata
     """
 
     def __init__(self):
-        """Initialize ArXiv helper step."""
         super().__init__(step_name="arxiv_helper")
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """
-        Validate prerequisites.
-
-        Required:
-        - template_type: Must be set (from Step 1)
-        - recipient_name: Required for author search
-        - recipient_interest: Required for pipeline context
-        """
+        """Validate template_type, recipient_name, and recipient_interest from Step 1."""
         if not pipeline_data.template_type:
             return "template_type not set (Step 1 must run first)"
 
@@ -55,14 +33,7 @@ class ArxivHelperStep(BasePipelineStep):
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
-        """
-        Execute ArXiv paper fetching.
-
-        Steps:
-        1. Check if template_type == RESEARCH (skip if not)
-        2. Search ArXiv for papers by recipient
-        3. Update PipelineData with paper info
-        """
+        """Search ArXiv for papers if RESEARCH template, otherwise skip."""
         try:
             # Step 1: Check template type
             if pipeline_data.template_type != TemplateType.RESEARCH:

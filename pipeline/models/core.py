@@ -1,9 +1,4 @@
-"""
-Core data models for the email generation pipeline.
-
-This module contains all enums, dataclasses used throughout
-the stateless pipeline system.
-"""
+"""Core data models for the email generation pipeline."""
 
 from dataclasses import dataclass, field
 from enum import Enum
@@ -11,15 +6,8 @@ from typing import Any, Dict, Optional, List
 from datetime import datetime
 
 
-# ===================================================================
-# ENUMS
-# ===================================================================
-
 class JobStatus(Enum):
-    """
-    Internal enum for tracking pipeline job status.
-    Used by Celery task state management.
-    """
+    """Pipeline job status for Celery task state management."""
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -27,38 +15,21 @@ class JobStatus(Enum):
 
 
 class TemplateType(str, Enum):
-    """
-    Type of email template determining which information to include.
-
-    RESEARCH: Include research papers and publications
-    BOOK: Include books authored by the recipient
-    GENERAL: Include general professional information
-    """
+    """Template type: RESEARCH (papers), BOOK (books), GENERAL (other)."""
     RESEARCH = "research"
     BOOK = "book"
     GENERAL = "general"
 
 
-# ===================================================================
-# PIPELINE DATA (IN-MEMORY STATE)
-# ===================================================================
-
 @dataclass
 class PipelineData:
     """
-    Shared data structure passed between all pipeline steps.
+    In-memory state passed between pipeline steps. Not persisted to database.
 
-    This object lives in-memory for the duration of pipeline execution.
-    Each step reads from and writes to specific fields.
-
-    IMPORTANT: This is NEVER persisted to the database.
-    Only the final email (from EmailComposer) is written to DB.
+    Only the final email is written to DB by EmailComposer.
     """
 
-    # ===================================================================
-    # INPUT DATA (Set by Celery task from API request)
-    # ===================================================================
-
+    # Input data (set by Celery task from API request)
     task_id: str
     """Celery task ID - used for correlation in Logfire"""
 
@@ -74,10 +45,7 @@ class PipelineData:
     recipient_interest: str
     """Research area or interest (e.g., 'machine learning')"""
 
-    # ===================================================================
-    # STEP 1 OUTPUTS (TemplateParser)
-    # ===================================================================
-
+    # Step 1 outputs (TemplateParser)
     search_terms: List[str] = field(default_factory=list)
     """
     Search queries extracted from template and recipient info.
@@ -93,10 +61,7 @@ class PipelineData:
     Always present after TemplateParser.
     """
 
-    # ===================================================================
-    # STEP 2 OUTPUTS (WebScraper)
-    # ===================================================================
-
+    # Step 2 outputs (WebScraper)
     scraped_content: str = ""
     """
     Cleaned and summarized content from web scraping.
@@ -114,10 +79,7 @@ class PipelineData:
     Scraping stats: total_urls_tried, successful_scrapes, failed_urls
     """
 
-    # ===================================================================
-    # STEP 3 OUTPUTS (ArxivEnricher)
-    # ===================================================================
-
+    # Step 3 outputs (ArxivEnricher)
     arxiv_papers: List[Dict[str, Any]] = field(default_factory=list)
     """
     Papers fetched from ArXiv API (only if template_type == RESEARCH).
@@ -130,10 +92,7 @@ class PipelineData:
     Enrichment stats: papers_found, papers_filtered, relevance_scores
     """
 
-    # ===================================================================
-    # STEP 4 OUTPUTS (EmailComposer)
-    # ===================================================================
-
+    # Step 4 outputs (EmailComposer)
     final_email: str = ""
     """
     Final composed email (ready to send).
@@ -147,24 +106,18 @@ class PipelineData:
 
     is_confident: bool = False
     """
-    Whether the email composer had sufficient context to write a 
+    Whether the email composer had sufficient context to write a
     quality personalized email (vs generic fallback).
     """
 
-    # ===================================================================
-    # METADATA (For final DB write)
-    # ===================================================================
-
+    # Metadata (for final DB write)
     metadata: Dict[str, Any] = field(default_factory=dict)
     """
     Metadata that will be stored in emails.metadata JSONB column.
     EmailComposer populates this before DB write.
     """
 
-    # ===================================================================
-    # TRANSIENT DATA (Logged to Logfire, NOT persisted)
-    # ===================================================================
-
+    # Transient data (logged to Logfire, not persisted)
     started_at: datetime = field(default_factory=datetime.utcnow)
     """Pipeline start time"""
 

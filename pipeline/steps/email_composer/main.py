@@ -1,15 +1,4 @@
-"""
-Email Composer Step - Phase 5 Step 4
-
-Final pipeline step - generates email and writes to database.
-
-Responsibilities:
-- Generate email using Anthropic Claude API
-- Validate email quality
-- Retry if validation fails
-- Write to database
-- Update PipelineData with final email
-"""
+"""Final pipeline step to generate email with Claude and write to database."""
 
 import json
 import logfire
@@ -27,22 +16,12 @@ from .db_utils import write_email_to_db, increment_user_generation_count
 
 class EmailComposerStep(BasePipelineStep):
     """
-    Step 4: Generate final email and write to database.
+    Generate final email with Claude and write to database.
 
-    Responsibilities:
-    - Combine data from Steps 1-3
-    - Generate email via Anthropic Claude API (with agent-level retries)
-    - Write to database
-    - Update PipelineData
-
-    Updates PipelineData fields:
-    - final_email: str (final composed email)
-    - composition_metadata: dict (generation metadata)
-    - metadata["email_id"]: UUID (CRITICAL for pipeline tracking)
+    Sets: final_email, composition_metadata, metadata["email_id"]
     """
 
     def __init__(self):
-        """Initialize email composer step."""
         super().__init__(step_name="email_composer")
 
         # Configuration
@@ -62,20 +41,7 @@ class EmailComposerStep(BasePipelineStep):
         )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
-        """
-        Validate prerequisites.
-
-        Required:
-        - email_template: Original template (from initialization)
-        - recipient_name: Recipient name
-        - recipient_interest: Research interest
-        - template_analysis: Analysis from Step 1
-        - scraped_content: Web data from Step 2
-        - user_id: For database write
-
-        Optional:
-        - arxiv_papers: Papers from Step 3 (may be empty)
-        """
+        """Validate required fields from Steps 1-3 and user_id for database write."""
         if not pipeline_data.email_template:
             return "email_template is missing"
 
@@ -97,18 +63,7 @@ class EmailComposerStep(BasePipelineStep):
         return None
 
     async def _execute_step(self, pipeline_data: PipelineData) -> StepResult:
-        """
-        Execute email generation and database write.
-
-        Steps:
-        1. Prepare composition prompt
-        2. Generate email via Anthropic API
-        3. Validate email quality
-        4. Prepare metadata for database storage
-        5. Write to database with template_type and metadata
-        6. Increment user generation count
-        7. Update PipelineData with results
-        """
+        """Generate email with Claude, write to database, and update PipelineData."""
         try:
             # Step 1: Prepare prompt
             user_prompt = create_composition_prompt(
