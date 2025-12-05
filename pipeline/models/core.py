@@ -89,7 +89,7 @@ class PipelineData:
 
     enrichment_metadata: Dict[str, Any] = field(default_factory=dict)
     """
-    Enrichment stats: papers_found, papers_filtered, relevance_scores
+    Enrichment stats: papers_found, search metadata
     """
 
     # Step 4 outputs (EmailComposer)

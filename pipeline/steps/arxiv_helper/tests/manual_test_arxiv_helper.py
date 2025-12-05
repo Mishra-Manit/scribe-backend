@@ -379,7 +379,6 @@ async def run_arxiv_test():
                         if len(paper['authors']) > 3:
                             print(f"             ... and {len(paper['authors']) - 3} more")
                         print(f"    Year: {paper['year']}")
-                        print(f"    Relevance Score: {paper['relevance_score']:.3f}")
                         print(f"    URL: {paper['url']}")
                         print(f"    Abstract (truncated): {paper['abstract'][:150]}...")
                 else:
@@ -406,10 +405,6 @@ async def run_arxiv_test():
                 print(f"  Execution Time: {duration:.2f} seconds")
                 print(f"  Template Type: {pipeline_data_research.template_type.value}")
                 print(f"  Papers Found: {len(pipeline_data_research.arxiv_papers)}")
-
-                if pipeline_data_research.enrichment_metadata.get('avg_relevance_score'):
-                    avg_score = pipeline_data_research.enrichment_metadata['avg_relevance_score']
-                    print(f"  Avg Relevance Score: {avg_score:.3f}")
 
                 print()
 

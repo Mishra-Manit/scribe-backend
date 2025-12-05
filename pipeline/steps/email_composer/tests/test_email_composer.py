@@ -330,8 +330,7 @@ developments in deep learning.
             "arxiv_id": "2309.07845",
             "arxiv_url": "https://arxiv.org/abs/2309.07845",
             "pdf_url": "https://arxiv.org/pdf/2309.07845.pdf",
-            "primary_category": "cs.LG",
-            "relevance_score": 0.95
+            "primary_category": "cs.LG"
         },
         {
             "title": "Scaling Laws for Neural Language Models: Theory and Practice",
@@ -346,8 +345,7 @@ developments in deep learning.
             "arxiv_id": "2306.11234",
             "arxiv_url": "https://arxiv.org/abs/2306.11234",
             "pdf_url": "https://arxiv.org/pdf/2306.11234.pdf",
-            "primary_category": "cs.LG",
-            "relevance_score": 0.89
+            "primary_category": "cs.LG"
         },
         {
             "title": "Gradient Flow Dynamics in Deep Neural Networks: A Theoretical Framework",
@@ -362,8 +360,7 @@ developments in deep learning.
             "arxiv_id": "2303.05678",
             "arxiv_url": "https://arxiv.org/abs/2303.05678",
             "pdf_url": "https://arxiv.org/pdf/2303.05678.pdf",
-            "primary_category": "cs.LG",
-            "relevance_score": 0.82
+            "primary_category": "cs.LG"
         },
         {
             "title": "Memory-Efficient Training of Large Language Models via Gradient Checkpointing",
@@ -378,8 +375,7 @@ developments in deep learning.
             "arxiv_id": "2211.14567",
             "arxiv_url": "https://arxiv.org/abs/2211.14567",
             "pdf_url": "https://arxiv.org/pdf/2211.14567.pdf",
-            "primary_category": "cs.LG",
-            "relevance_score": 0.78
+            "primary_category": "cs.LG"
         }
     ]
 
