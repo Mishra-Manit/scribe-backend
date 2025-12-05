@@ -1,6 +1,6 @@
 """
 Database session management utilities.
-Provides context managers and helpers for database sessions.
+Provides context managers for database sessions.
 """
 
 from contextlib import contextmanager
@@ -33,8 +33,3 @@ def get_db_context() -> Generator[Session, None, None]:
         raise
     finally:
         db.close()
-
-
-def create_session() -> Session:
-    """Create a new database session."""
-    return SessionLocal()

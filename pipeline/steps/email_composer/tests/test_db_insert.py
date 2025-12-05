@@ -16,7 +16,7 @@ from uuid import UUID
 from pipeline.steps.email_composer.db_utils import write_email_to_db
 from pipeline.models.core import TemplateType
 from models.email import Email
-from database.session import create_session
+from database.base import SessionLocal
 
 
 # ===================================================================
@@ -125,7 +125,7 @@ arivera@mit.edu"""
         logfire.info("✓ Email ID returned successfully", email_id=str(email_id))
 
         # Query the database to verify the email was actually inserted
-        db = create_session()
+        db = SessionLocal()
 
         try:
             email_record = db.query(Email).filter(Email.id == email_id).first()

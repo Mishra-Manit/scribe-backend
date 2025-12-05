@@ -20,7 +20,7 @@ from datetime import datetime
 from pipeline.steps.email_composer.main import EmailComposerStep
 from pipeline.models.core import PipelineData, TemplateType
 from models.user import User
-from database.session import create_session
+from database.base import SessionLocal
 
 
 # ===================================================================
@@ -39,7 +39,7 @@ async def test_user():
     """
     logfire.info("Creating test user for email composer testing")
 
-    db = create_session()
+    db = SessionLocal()
     test_user_id = uuid4()
 
     try:
@@ -564,7 +564,7 @@ async def test_email_composer_research_template_full_pipeline(
 
         # Query database to verify email was written
         from models.email import Email
-        db = create_session()
+        db = SessionLocal()
 
         try:
             email_record = db.query(Email).filter(Email.id == email_id).first()

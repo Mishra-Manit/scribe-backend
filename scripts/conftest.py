@@ -110,15 +110,3 @@ def event_loop_policy():
     """Set the event loop policy for async tests."""
     import asyncio
     return asyncio.DefaultEventLoopPolicy()
-
-
-# ============================================================================
-# Database Fixtures (for future use)
-# ============================================================================
-
-# Uncomment when database tests are needed
-# @pytest.fixture(scope="function")
-# async def test_db():
-#     """Create a test database session."""
-#     # TODO: Implement test database setup/teardown
-#     pass

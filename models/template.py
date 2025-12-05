@@ -96,19 +96,3 @@ class Template(Base):
             f"<Template(id={self.id}, user_id={self.user_id}, "
             f"created_at={self.created_at})>"
         )
-
-    def to_dict(self) -> dict:
-        """
-        Convert template model to dictionary.
-
-        Returns:
-            dict: Template data as dictionary
-        """
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "pdf_url": self.pdf_url,
-            "template_text": self.template_text,
-            "user_instructions": self.user_instructions,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }

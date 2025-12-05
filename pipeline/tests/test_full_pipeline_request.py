@@ -17,7 +17,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from database.session import create_session
+from database.base import SessionLocal
 from models.email import Email
 from models.user import User
 from pipeline import create_email_pipeline
@@ -31,7 +31,7 @@ RUN_PIPELINE_E2E_TESTS = os.getenv("RUN_PIPELINE_E2E_TESTS") == "1"
 def _create_test_user() -> UUID:
     """Insert a temporary user that mimics an authenticated Supabase user."""
     user_id = uuid4()
-    session = create_session()
+    session = SessionLocal()
     try:
         session.add(
             User(
@@ -48,7 +48,7 @@ def _create_test_user() -> UUID:
 
 def _cleanup_records(user_id: UUID, email_id: UUID | None = None) -> None:
     """Remove any test data created during the run."""
-    session = create_session()
+    session = SessionLocal()
     try:
         if email_id:
             session.query(Email).filter(Email.id == email_id).delete()
@@ -117,7 +117,7 @@ async def test_full_pipeline_round_trip_creates_email_record():
         assert pipeline_data.composition_metadata.get("email_id") == str(email_id)
 
         # Database verification
-        session = create_session()
+        session = SessionLocal()
         try:
             email_record = (
                 session.query(Email)

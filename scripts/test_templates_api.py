@@ -17,18 +17,15 @@ Make sure your FastAPI server is running and JWT_TOKEN is valid for
 `API_BASE_URL`.
 """
 
+import os
 import time
 from typing import Dict, Any, List, Optional
 
 import requests
 
 # Configuration
-# API_BASE_URL = "http://localhost:8000"
-API_BASE_URL = "https://scribeserver.onrender.com"
-
-# IMPORTANT: Update this token as needed. It should match the environment
-# and user you want to test with.
-JWT_TOKEN = "eyJhbGciOiJFUzI1NiIsImtpZCI6ImMzNmRkNzM5LTM1YjItNGZjNy04NTk2LTJkZmViMjBlYWMxNyIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3Nla3VmZ2d4Y2ZkZXVhbW5ncHBmLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiIyNmRjMmZiOS03ZjI3LTQ2YzItYTUzMi0xNDllNTRiM2JhOWUiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzY0MTI0NDkyLCJpYXQiOjE3NjQxMjA4OTIsImVtYWlsIjoibXNobWFuaXRAZ21haWwuY29tIiwicGhvbmUiOiIiLCJhcHBfbWV0YWRhdGEiOnsicHJvdmlkZXIiOiJnb29nbGUiLCJwcm92aWRlcnMiOlsiZ29vZ2xlIl19LCJ1c2VyX21ldGFkYXRhIjp7ImF2YXRhcl91cmwiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NKREtfemxISDZTZzlDZ0wya0RRYUc5aGhZRXU5X1NORWU2VUl6ZDFkaHJPOU1uRFE9czk2LWMiLCJlbWFpbCI6Im1zaG1hbml0QGdtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJmdWxsX25hbWUiOiJNYW5pdCBNaXNocmEiLCJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJuYW1lIjoiTWFuaXQgTWlzaHJhIiwicGhvbmVfdmVyaWZpZWQiOmZhbHNlLCJwaWN0dXJlIjoiaHR0cHM6Ly9saDMuZ29vZ2xldXNlcmNvbnRlbnQuY29tL2EvQUNnOG9jSkRLX3psSEg2U2c5Q2dMMmtEUWFHOWhoWUV1OV9TTkVlNlVJemQxZGhyTzlNbkRRPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUiLCJzdWIiOiIxMTM3Mzk1ODAyNTc1NDkwMjQyNTUifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJvYXV0aCIsInRpbWVzdGFtcCI6MTc2NDEyMDg5Mn1dLCJzZXNzaW9uX2lkIjoiMDU0YjA4ZWQtNGY5Ny00NmQwLThmYWYtOTU2YzhkY2E4MDBjIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.IszxsrekhjcbmYOjtGRXsZMDytXEpATZnyfrwgS_AchUTqMvmGf9td9-6px1LEgXztIxmU8h9WsOBl8Eu3IQ1Q"  # paste a valid JWT here for quick local testing
+API_BASE_URL = os.getenv("API_BASE_URL", "https://scribeserver.onrender.com")
+JWT_TOKEN = os.getenv("JWT_TOKEN", "")
 
 # ANSI color codes for pretty output
 GREEN = "\033[92m"
@@ -62,9 +59,9 @@ def get_headers() -> Dict[str, str]:
     """Get request headers with JWT token."""
     if not JWT_TOKEN:
         raise ValueError(
-            "JWT_TOKEN not set in script!\n"
-            "Edit scripts/test_templates_api.py and set JWT_TOKEN to a valid token,\n"
-            "or refactor to read from environment if preferred."
+            "JWT_TOKEN environment variable not set!\n"
+            "Get a token from Supabase and run:\n"
+            "  export JWT_TOKEN='your-token-here'"
         )
 
     return {

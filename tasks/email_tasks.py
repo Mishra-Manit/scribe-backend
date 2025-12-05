@@ -24,25 +24,6 @@ JOB_STATUS_TO_CELERY_STATE = {
 }
 
 
-def _coerce_template_type(value: str | TemplateType | None) -> TemplateType | None:
-    """
-    Convert a string (or TemplateType) into a TemplateType enum when provided.
-    """
-    if value in (None, ""):
-        return None
-
-    if isinstance(value, TemplateType):
-        return value
-
-    try:
-        return TemplateType(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid template_type '{value}'. Expected one of: "
-            f"{', '.join(t.value for t in TemplateType)}."
-        ) from exc
-
-
 @celery_app.task(bind=True)
 def generate_email_task(
     self,
@@ -73,8 +54,6 @@ def generate_email_task(
     missing = [field for field, value in required_fields.items() if not value]
     if missing:
         raise ValueError(f"Missing required parameters: {', '.join(missing)}")
-
-    template_type_enum = _coerce_template_type(template_type)
 
     def _update_status(status: JobStatus, extra_meta: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -112,7 +91,7 @@ def generate_email_task(
         email_template=email_template,
         recipient_name=recipient_name,
         recipient_interest=recipient_interest,
-        template_type=template_type_enum,
+        template_type=template_type,
     )
 
     runner = create_email_pipeline()

@@ -1,6 +1,5 @@
 """
 Main FastAPI application entry point.
-Replaces the Flask app with modern FastAPI framework.
 """
 
 from contextlib import asynccontextmanager
@@ -8,13 +7,13 @@ from typing import Dict
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logfire
 
 from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
 from observability.logfire_config import LogfireConfig
 from api.routes import user_router, email_router, template_router
-import logfire
 
 
 @asynccontextmanager
@@ -23,48 +22,47 @@ async def lifespan(app: FastAPI):
     Application lifespan manager.
     Handles startup and shutdown events.
     """
-    # Startup
-    print("=" * 50)
-    print("Starting Scribe API Server")
-    print("=" * 50)
-    print(f"Environment: {settings.environment}")
-    print(f"Debug mode: {settings.debug}")
+    # Initialize Logfire first so we can use structured logging
+    LogfireConfig.initialize(token=settings.logfire_token)
+
+    # Startup logging
+    logfire.info(
+        "Starting Scribe API Server",
+        environment=settings.environment,
+        debug=settings.debug,
+    )
 
     # Check database connection on startup
     db_info = get_db_info()
-    print(f"\nDatabase: {db_info['url']}")
-    print(f"Status: {db_info['status']}")
-
     if db_info['status'] == 'connected':
-        print("✓ Database connection successful")
+        logfire.info(
+            "Database connection successful",
+            url=db_info['url'],
+            status=db_info['status'],
+        )
     else:
-        print("✗ Database connection failed!")
-        print("  Please check your DATABASE_URL in .env file")
+        logfire.error(
+            "Database connection failed",
+            url=db_info['url'],
+            status=db_info['status'],
+        )
 
     # Check Supabase client initialization
-    print("\nChecking Supabase connection...")
     supabase = get_supabase_client_safe()
     if supabase:
-        print("✓ Supabase client initialized successfully")
+        logfire.info("Supabase client initialized successfully")
     else:
-        print("✗ Supabase client initialization failed!")
-        print("  Please check your SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file")
+        logfire.error(
+            "Supabase client initialization failed",
+            hint="Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file",
+        )
 
-    # Initialize Logfire observability
-    print("\nInitializing Logfire observability...")
-    LogfireConfig.initialize(token=settings.logfire_token)
-
-    # Log local instance creation for development environments
-    if settings.is_development:
-        import logfire
-        logfire.info("Local development instance created", environment=settings.environment)
-
-    print("=" * 50)
+    logfire.info("Scribe API Server startup complete")
 
     yield
 
     # Shutdown
-    print("\nShutting down Scribe API Server...")
+    logfire.info("Shutting down Scribe API Server")
 
 
 # Initialize FastAPI app

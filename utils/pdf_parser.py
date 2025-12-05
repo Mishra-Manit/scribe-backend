@@ -2,6 +2,7 @@
 
 import httpx
 import logfire
+import re
 from pypdf import PdfReader
 from io import BytesIO
 
@@ -83,14 +84,10 @@ async def extract_text_from_url(pdf_url: str, timeout: int = 30) -> str:
 
 
 def clean_text(raw_text: str) -> str:
-    """
-    Clean and normalize extracted PDF text.
-    """
     # Collapse multiple spaces into single space
     text = " ".join(raw_text.split())
 
     # Limit consecutive newlines to maximum of 2 (preserve paragraph structure)
-    import re
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     # Strip leading/trailing whitespace

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/user", tags=["User Management"])
 
 @router.post("/init", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def initialize_user_profile(
-    user_init: UserInit = None,
+    user_init: UserInit,
     supabase_user: SupabaseUser = Depends(get_supabase_user),
     db: Session = Depends(get_db),
 ):
@@ -36,7 +36,7 @@ async def initialize_user_profile(
     **Idempotent**: If the user already exists, returns the existing profile.
 
     Args:
-        user_init: Optional initialization data (display_name)
+        user_init: Initialization data with display_name (auto-derived from OAuth by frontend)
         supabase_user: Validated user from JWT token (injected by dependency)
         db: Database session (injected by dependency)
 
@@ -44,7 +44,7 @@ async def initialize_user_profile(
         UserResponse: Created or existing user profile
 
     Raises:
-        HTTPException 503: If database operation fails
+        HTTPException 500: If database operation fails
         HTTPException 401: If JWT token is invalid (handled by dependency)
     """
     # Check if user already exists
@@ -54,19 +54,11 @@ async def initialize_user_profile(
         # User already initialized - return existing profile
         return existing_user
 
-    # Determine display name
-    display_name = None
-    if user_init and user_init.display_name:
-        display_name = user_init.display_name
-    else:
-        # Default to email username
-        display_name = supabase_user.email.split("@")[0]
-
     # Create new user in database
     new_user = User(
         id=supabase_user.id,
         email=supabase_user.email,
-        display_name=display_name,
+        display_name=user_init.display_name,
         generation_count=0,
     )
 

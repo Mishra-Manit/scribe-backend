@@ -5,6 +5,7 @@ This module provides a singleton Supabase client instance using the service role
 for administrative operations like JWT validation and database operations.
 """
 
+import logfire
 from supabase import create_client, Client
 from config import settings
 
@@ -29,7 +30,6 @@ def get_supabase_client() -> Client:
     global _supabase_client
 
     if _supabase_client is None:
-        # Validate configuration
         if not settings.supabase_url:
             raise ValueError("SUPABASE_URL is not configured")
         if not settings.supabase_service_role_key:
@@ -40,23 +40,19 @@ def get_supabase_client() -> Client:
                 settings.supabase_url,
                 settings.supabase_service_role_key
             )
-            print(f" Supabase client initialized: {settings.supabase_url}")
         except Exception as e:
-            print(f" Failed to initialize Supabase client: {e}")
+            logfire.error(
+                "Failed to initialize Supabase client",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             raise
 
     return _supabase_client
 
 
 def get_supabase_client_safe() -> Client | None:
-    """
-    Get the Supabase client without raising exceptions.
-
-    Useful for startup checks and health endpoints.
-
-    Returns:
-        Client | None: Supabase client instance or None if initialization fails
-    """
+    """Get Supabase client without raising exceptions."""
     try:
         return get_supabase_client()
     except Exception:

@@ -87,31 +87,32 @@ def init_worker_process(**kwargs) -> None:
     """
     # CRITICAL: Re-establish sys.path in forked child process
     # This fixes import issues with billiard fork on Python 3.13/macOS
-    # The forked child process can have corrupted import machinery state
     project_root = Path(__file__).parent.absolute()
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-        print(f"✓ Added project root to sys.path in worker: {project_root}")
 
     # Configure Logfire for observability in worker processes
     if os.getenv("LOGFIRE_TOKEN"):
         logfire.configure(
             service_name="scribe-celery-worker",
             send_to_logfire="if-token-present",
-            console=False,  # Disable console logging in workers
+            console=False,
         )
-        print("✓ Logfire configured for Celery worker")
     else:
-        # Configure without sending to logfire (local development)
         logfire.configure(
             send_to_logfire=False,
             console=False,
         )
-        print("ℹ Logfire configured (local mode, no token)")
 
     # Instrument pydantic-ai to capture agent runs and spans
     logfire.instrument_pydantic_ai()
-    print("✓ Logfire pydantic-ai instrumentation enabled")
+
+    # Log worker initialization after logfire is configured
+    logfire.info(
+        "Celery worker initialized",
+        project_root=str(project_root),
+        logfire_enabled=bool(os.getenv("LOGFIRE_TOKEN")),
+    )
 
 
 @celery_app.task(name="health_check")

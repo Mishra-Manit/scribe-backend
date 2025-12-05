@@ -2,7 +2,7 @@
 Pydantic schemas for request/response validation.
 """
 
-from schemas.auth import SupabaseUser, UserResponse, UserInit, AuthError
+from schemas.auth import SupabaseUser, UserResponse, UserInit
 from schemas.pipeline import (
     GenerateEmailRequest,
     GenerateEmailResponse,
@@ -19,7 +19,6 @@ __all__ = [
     "SupabaseUser",
     "UserResponse",
     "UserInit",
-    "AuthError",
 
     # Pipeline schemas
     "GenerateEmailRequest",

@@ -34,13 +34,14 @@ class SupabaseUser(BaseModel):
 
 class UserInit(BaseModel):
     """
-    Optional request body for user initialization.
+    Request body for user initialization.
 
-    The user ID and email come from the JWT token, but the user
-    can optionally provide a display name during initialization.
+    The user ID and email come from the JWT token. The display name
+    is auto-derived by the frontend from OAuth provider data (e.g.,
+    Google full name) or falls back to the email username.
     """
 
-    display_name: str | None = None
+    display_name: str
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -78,22 +79,4 @@ class UserResponse(BaseModel):
                 "created_at": "2024-01-13T10:30:00Z",
             }
         },
-    )
-
-
-class AuthError(BaseModel):
-    """
-    Standardized error response for authentication failures.
-    """
-
-    detail: str
-    error_code: str | None = None
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "detail": "Invalid or expired token",
-                "error_code": "TOKEN_EXPIRED",
-            }
-        }
     )

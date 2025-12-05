@@ -3,7 +3,6 @@ Email model for SQLAlchemy ORM.
 Represents the emails table in the database.
 """
 
-from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index, Enum, Boolean, text

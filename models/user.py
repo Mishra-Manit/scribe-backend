@@ -98,19 +98,3 @@ class User(Base):
     def __repr__(self) -> str:
         """String representation of User model."""
         return f"<User(id={self.id}, email='{self.email}', generation_count={self.generation_count})>"
-
-    def to_dict(self) -> dict:
-        """
-        Convert user model to dictionary.
-
-        Returns:
-            dict: User data as dictionary
-        """
-        return {
-            "id": str(self.id),
-            "email": self.email,
-            "display_name": self.display_name,
-            "generation_count": self.generation_count,
-            "template_count": self.template_count,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }

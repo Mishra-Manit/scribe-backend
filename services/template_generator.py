@@ -16,12 +16,7 @@ async def generate_template_from_resume(
     model: str = "anthropic:claude-haiku-4-5"
 ) -> str:
     """
-    Generate email template from resume PDF and user instructions.
-
-    Args:
-        pdf_url: Public URL to resume PDF in Supabase Storage
-        user_instructions: User guidance for template generation (tone, style, focus)
-        model: AI model identifier (default: Claude Haiku 4.5)
+    Generate email template from resume PDF and user instructions
 
     Returns:
         Generated template text (150-250 words with placeholders)
@@ -85,7 +80,6 @@ Generate a cold email template following all guidelines above."""
             return template_text
 
         except ValueError as e:
-            # PDF parsing errors - propagate as-is
             logfire.error(
                 "Template generation failed due to PDF error",
                 pdf_url=pdf_url,
