@@ -4,6 +4,7 @@ Email Composer Database Utilities
 Database operations for writing composed emails.
 """
 
+import asyncio
 import logfire
 from typing import Optional
 from uuid import UUID
@@ -24,7 +25,11 @@ async def write_email_to_db(
     is_confident: bool = False
 ) -> Optional[UUID]:
     """
-    Write composed email to database.
+    Write composed email to database using thread pool for sync operations.
+
+    This function runs synchronous database operations in a thread pool to prevent
+    blocking the async event loop. Without this, sync DB operations can cause
+    400+ second delays in async contexts.
 
     Args:
         user_id: User who generated the email
@@ -46,7 +51,8 @@ async def write_email_to_db(
         is_confident=is_confident
     )
 
-    try:
+    def _sync_write() -> UUID:
+        """Synchronous database write operation executed in thread pool."""
         with get_db_context() as db:
             # Create and add email record
             email = Email(
@@ -64,14 +70,20 @@ async def write_email_to_db(
             email_id = email.id
             db.commit()  # Explicit commit
 
-            logfire.info(
-                "Email written to database successfully",
-                email_id=str(email_id),
-                user_id=str(user_id),
-                recipient_name=recipient_name
-            )
-
             return email_id
+
+    try:
+        # Run blocking DB operation in thread pool to avoid blocking event loop
+        email_id = await asyncio.to_thread(_sync_write)
+
+        logfire.info(
+            "Email written to database successfully",
+            email_id=str(email_id),
+            user_id=str(user_id),
+            recipient_name=recipient_name
+        )
+
+        return email_id
 
     except Exception as e:
         logfire.error(
@@ -85,7 +97,7 @@ async def write_email_to_db(
 
 async def increment_user_generation_count(user_id: UUID) -> bool:
     """
-    Increment user's generation count.
+    Increment user's generation count using thread pool for sync operations.
 
     Optional operation - doesn't fail pipeline if unsuccessful.
 
@@ -95,7 +107,8 @@ async def increment_user_generation_count(user_id: UUID) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    try:
+    def _sync_increment() -> bool:
+        """Synchronous database operation executed in thread pool."""
         with get_db_context() as db:
             # Fetch user
             user = db.query(User).filter(User.id == user_id).first()
@@ -118,6 +131,10 @@ async def increment_user_generation_count(user_id: UUID) -> bool:
             )
 
             return True
+
+    try:
+        # Run blocking DB operation in thread pool to avoid blocking event loop
+        return await asyncio.to_thread(_sync_increment)
 
     except Exception as e:
         logfire.error(
