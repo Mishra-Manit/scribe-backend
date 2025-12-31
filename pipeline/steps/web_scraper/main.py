@@ -4,7 +4,7 @@ import logfire
 import asyncio
 from typing import Optional, List
 from pipeline.core.runner import BasePipelineStep
-from pipeline.models.core import PipelineData, StepResult
+from pipeline.models.core import PipelineData, StepResult, TemplateType
 from pipeline.core.exceptions import ExternalAPIError
 from config.settings import settings
 from utils.llm_agent import create_agent

@@ -150,18 +150,25 @@ Extract all factual information about the professor from the provided web conten
 </task>
 
 <output_requirements>
-You MUST call the Summary tool with a filled 'summary' field. The Summary tool signature is:
+You MUST call the Summary tool exactly once with a filled 'summary' field. The Summary tool signature is:
 Summary(summary: str)
 
 The 'summary' field must contain:
 ✓ Non-empty content (minimum 100 characters)
-✓ Structured markdown with clear sections
+✓ Structured markdown with these sections for guidance:
+  1) **Current Position**
+  2) **Education**
+  3) **Research Areas**
+  4) **Achievements & Recognition**
+  5) **Additional Context**
 ✓ Only facts explicitly stated in the source content
-✓ [PAGE X] markers for source attribution
+✓ [PAGE X] markers for source attribution on each bullet
 ✓ Maximum 4000 characters
 
 If no relevant information exists, use this exact format:
 "No relevant information found in this batch. Content contained only [describe what was found, e.g., 'navigation elements and generic university descriptions']."
+
+Never return prose outside the Summary tool call.
 </output_requirements>
 
 <extraction_focus>
@@ -178,32 +185,34 @@ Maintain EXACT titles, names, dates, and terminology from the source. Include ve
 <example>
 Here is what a properly filled Summary looks like:
 
-Summary(summary=\"\"\"**Publications:**
-- [PAGE 1] \"Deep Learning for Climate Modeling\" (2023) - co-authored with Smith et al., published in Nature Climate
-- [PAGE 3] \"Neural Networks in Weather Prediction\" (2022) - first-authored
+Summary(summary=\"\"\"**Current Position:**
+- [PAGE 1] Full Professor of Astrophysical Sciences at Princeton University
+- [PAGE 1] Director of the Princeton Planets and Life Certificate Program
 
-**Current Position:**
-- [PAGE 2] Professor of Computer Science, MIT (since 2020)
-- [PAGE 2] Director of Climate AI Lab with 15 researchers
+**Education:**
+- [PAGE 1] Undergraduate degree in Physics from Princeton University
+- [PAGE 1] Ph.D. in Physics from Massachusetts Institute of Technology (MIT)
 
 **Research Areas:**
-- [PAGE 1] Machine learning applications in climate science
-- [PAGE 3] Neural network architectures for spatiotemporal data
-- [PAGE 3] Uncertainty quantification in weather models
+- [PAGE 4] Supernova theory
+- [PAGE 4] Exoplanet and brown dwarf theory
+- [PAGE 4] Planetary atmospheres
+- [PAGE 4] Computational astrophysics
+- [PAGE 2] Nuclear astrophysics
 
-**Achievements:**
-- [PAGE 3] NSF CAREER Award (2021) - $500K grant for climate modeling research
-- [PAGE 4] Outstanding Paper Award at NeurIPS 2022
+**Achievements & Recognition:**
+- [PAGE 2] Member of the National Academy of Sciences (NAS)
+- [PAGE 2] Fellow of the American Academy of Arts and Sciences
+- [PAGE 3] Fellow of the American Physical Society
 
 **Additional Context:**
-- [PAGE 2] Collaborates with NOAA on operational weather prediction systems
-- [PAGE 4] PhD students: 8 current, 12 graduated\"\"\")
+- [PAGE 1] Well-known as a pioneer in the theory of exoplanets, brown dwarfs, and supernovae\"\"\")
 
 This is a complete, valid output. The 'summary' field contains all extracted content in structured markdown format.
 </example>
 
 <critical_reminder>
-You MUST call the Summary tool with a non-empty 'summary' field. An empty or missing field will cause validation errors and break the email generation pipeline. Always provide at least 100 characters of content, even if using the "No relevant information" fallback.
+You MUST call the Summary tool exactly once with a non-empty 'summary' field. An empty or missing field will cause validation errors and break the email generation pipeline. Always provide at least 100 characters of content, even if using the "No relevant information" fallback. Do not emit any text outside the Summary(...) call.
 
 This is an intermediate extraction step - extract everything you find. The final summary will filter for relevance and synthesize information across all batches.
 </critical_reminder>"""
@@ -232,7 +241,7 @@ def create_batch_summarization_prompt(
 <instructions>
 Extract ALL factual information from the batch content below. Be comprehensive - this is an intermediate extraction step that will be combined with other batches.
 
-Follow the structured format in your system prompt with sections: Publications, Current Position, Research Areas, Achievements, Additional Context.
+Follow the structured format in your system prompt with sections (in order): Current Position, Education, Research Areas, Achievements & Recognition, Additional Context.
 
 Include [PAGE X] markers for source attribution. Maximum 4000 characters.
 </instructions>
@@ -242,7 +251,9 @@ Include [PAGE X] markers for source attribution. Maximum 4000 characters.
 </batch_content>
 
 <reminder>
-Call the Summary tool with a non-empty 'summary' field containing your extracted facts in markdown format. Minimum 100 characters required.
+Call the Summary tool exactly once with a non-empty 'summary' field containing your extracted facts in markdown format. Minimum 100 characters required. Do not return any text outside this tool call. Use this skeleton:
+
+Summary(summary=\"\"\"**Current Position:**\n- [PAGE X] ...\n\n**Education:**\n- [PAGE X] ...\n\n**Research Areas:**\n- [PAGE X] ...\n\n**Achievements & Recognition:**\n- [PAGE X] ...\n\n**Additional Context:**\n- [PAGE X] ...\"\"\")
 </reminder>"""
 
 
