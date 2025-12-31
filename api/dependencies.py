@@ -26,12 +26,18 @@ async def get_supabase_user(
     Raises:
         HTTPException: 401 if token invalid, 503 if Supabase unavailable
     """
+    import logfire
+
     token = creds.credentials
+    logfire.info("Starting JWT validation", token_prefix=token[:20])
 
     # Get Supabase client
     try:
+        logfire.info("Getting Supabase client")
         supabase = get_supabase_client()
+        logfire.info("Supabase client retrieved successfully")
     except Exception as e:
+        logfire.error("Failed to get Supabase client", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Supabase client not available: {str(e)}",
@@ -40,16 +46,20 @@ async def get_supabase_user(
     # Validate token with Supabase
     try:
         # This makes a network call to Supabase to validate the token
+        logfire.info("Calling Supabase auth.get_user()")
         supabase_response = supabase.auth.get_user(token)
+        logfire.info("Supabase auth.get_user() completed")
 
         # Extract user data from response
         if not supabase_response or not supabase_response.user:
+            logfire.warning("No user data in Supabase response")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token: no user data returned",
             )
 
         user_data = supabase_response.user
+        logfire.info("JWT validated successfully", user_id=user_data.id, email=user_data.email)
 
         # Return validated user data
         return SupabaseUser(

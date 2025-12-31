@@ -28,8 +28,14 @@ def get_db() -> Generator[Session, None, None]:
         - Exceptions are properly handled
         - Connection is returned to the pool
     """
+    import logfire
+
+    logfire.info("Creating database session")
     db = SessionLocal()
+    logfire.info("Database session created successfully")
     try:
         yield db
     finally:
+        logfire.info("Closing database session")
         db.close()
+        logfire.info("Database session closed")
