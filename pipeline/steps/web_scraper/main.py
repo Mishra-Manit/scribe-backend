@@ -9,7 +9,13 @@ from pipeline.core.exceptions import ExternalAPIError
 from config.settings import settings
 from utils.llm_agent import create_agent
 
-from .models import ScrapedPage, ScrapingResult, Summary
+from .models import (
+    ScrapedPage,
+    ScrapingResult,
+    DirectSummary,
+    BatchSummary,
+    FinalSummary,
+)
 from .google_search import GoogleSearchClient
 from .utils import scrape_url
 from .prompts import SUMMARIZATION_SYSTEM_PROMPT, create_summarization_prompt
@@ -32,7 +38,7 @@ class WebScraperStep(BasePipelineStep):
         # Low temperature for factual, grounded output (anti-hallucination)
         self.summarization_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
-            output_type=Summary,
+            output_type=DirectSummary,
             system_prompt=SUMMARIZATION_SYSTEM_PROMPT,
             temperature=0.0,
             max_tokens=2000,
@@ -48,8 +54,6 @@ class WebScraperStep(BasePipelineStep):
         # Page-based summarization configuration
         self.chunk_size = 10000  # Single page chunk size for direct summarization
         self.max_page_content_size = 10000  # Maximum characters per page for batch summarization
-        self.batch_max_output_chars = 1000  # Max chars per page summary
-        self.final_max_output_chars = 2000  # Max chars for final summary
         self.max_batches_allowed = 5  # Maximum number of pages allowed for summarization
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
@@ -293,10 +297,10 @@ class WebScraperStep(BasePipelineStep):
         # Create batch-specific agent (ephemeral)
         batch_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
-            output_type=Summary,
+            output_type=BatchSummary,
             system_prompt=BATCH_SUMMARIZATION_SYSTEM_PROMPT,
             temperature=0.0,
-            max_tokens=3000,
+            max_tokens=2500,
             retries=2,
             timeout=60.0
         )
@@ -310,7 +314,7 @@ class WebScraperStep(BasePipelineStep):
 
         try:
             result = await batch_agent.run(user_prompt)
-            summary_obj: Summary = result.output  # Summary object from pydantic-ai
+            summary_obj: BatchSummary = result.output  # Summary object from pydantic-ai
             summary_text: str = summary_obj.summary  # Extract string field
 
             # Validate that summary is not empty
@@ -330,7 +334,7 @@ class WebScraperStep(BasePipelineStep):
                 output_length=len(summary_text)
             )
 
-            return summary_text[:4000]  # Enforce limit
+            return summary_text  # Validation handled by BatchSummary model
 
         except Exception as e:
             error_msg = str(e)
@@ -407,7 +411,7 @@ class WebScraperStep(BasePipelineStep):
             # Let pydantic-ai's auto-instrumentation handle agent spans
             try:
                 result = await self.summarization_agent.run(user_prompt)
-                summary_obj: Summary = result.output  # Summary object from pydantic-ai
+                summary_obj: DirectSummary = result.output  # Summary object from pydantic-ai
                 summary_text: str = summary_obj.summary  # Extract string field
 
                 logfire.info(
@@ -417,7 +421,7 @@ class WebScraperStep(BasePipelineStep):
                     template_type=template_type.value
                 )
 
-                return summary_text[:3000]
+                return summary_text
 
             except Exception as e:
                 logfire.error(
@@ -525,10 +529,10 @@ Title: {page.title or 'N/A'}
         # Agent.run() will be auto-instrumented by pydantic-ai
         final_agent = create_agent(
             model="anthropic:claude-haiku-4-5",
-            output_type=Summary,
+            output_type=FinalSummary,
             system_prompt=FINAL_SUMMARY_SYSTEM_PROMPT,
             temperature=0.2,
-            max_tokens=2500,
+            max_tokens=2000,
             retries=2,
             timeout=60.0
         )
@@ -542,7 +546,7 @@ Title: {page.title or 'N/A'}
 
         try:
             result = await final_agent.run(final_prompt)
-            summary_obj: Summary = result.output  # Summary object from pydantic-ai
+            summary_obj: FinalSummary = result.output  # Summary object from pydantic-ai
             final_summary_text: str = summary_obj.summary  # Extract string field
 
             logfire.info(
@@ -552,7 +556,7 @@ Title: {page.title or 'N/A'}
                 template_type=template_type.value
             )
 
-            return final_summary_text[:3000]
+            return final_summary_text
 
         except Exception as e:
             logfire.error(

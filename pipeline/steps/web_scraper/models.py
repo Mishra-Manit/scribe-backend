@@ -8,10 +8,58 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class Summary(BaseModel):
-    """LLM summary output."""
+class DirectSummary(BaseModel):
+    """LLM summary output for single-pass, small-page summarization."""
 
-    summary: str = Field(description="Summarized content")
+    summary: str = Field(
+        description="Summarized content (direct, single-page)",
+        min_length=10,
+        max_length=3000,
+    )
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, v: str) -> str:
+        """Ensure summary is meaningful and trimmed."""
+        if not v or not v.strip():
+            raise ValueError("Summary cannot be empty or whitespace")
+        return v.strip()
+
+
+class BatchSummary(BaseModel):
+    """LLM output for per-page batch summarization."""
+
+    summary: str = Field(
+        description="Summarized content for a single scraped page",
+        min_length=10,
+        max_length=4000,
+    )
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, v: str) -> str:
+        """Ensure summary is meaningful and trimmed."""
+        if not v or not v.strip():
+            raise ValueError("Summary cannot be empty or whitespace")
+        return v.strip()
+
+
+class FinalSummary(BaseModel):
+    """LLM output for final synthesis across all pages."""
+
+    summary: str = Field(
+        description="Final synthesized summary across pages",
+        min_length=10,
+        max_length=3000,
+    )
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, v: str) -> str:
+        """Ensure summary is meaningful and trimmed."""
+        if not v or not v.strip():
+            raise ValueError("Summary cannot be empty or whitespace")
+        return v.strip()
 
 
 class ScrapedPage(BaseModel):
