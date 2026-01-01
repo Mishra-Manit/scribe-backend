@@ -57,6 +57,38 @@ async def lifespan(app: FastAPI):
             hint="Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file",
         )
 
+    # Validate CORS configuration
+    logfire.info(
+        "CORS configuration",
+        allowed_origins=settings.allowed_origins,
+        origin_count=len(settings.allowed_origins),
+        environment=settings.environment,
+    )
+
+    # Warn about potential CORS issues
+    for origin in settings.allowed_origins:
+        if origin == "*":
+            if settings.is_production:
+                logfire.error(
+                    "SECURITY WARNING: Wildcard CORS origin in production",
+                    hint="Set ALLOWED_ORIGINS to specific domain in production"
+                )
+            continue
+
+        if not origin.startswith(("http://", "https://")):
+            logfire.error(
+                "Invalid CORS origin - missing protocol",
+                origin=origin,
+                hint=f"Should be 'https://{origin}' or 'http://{origin}'"
+            )
+
+        if origin.endswith("/"):
+            logfire.warning(
+                "CORS origin has trailing slash",
+                origin=origin,
+                hint="Remove trailing slash for exact matching"
+            )
+
     logfire.info("Scribe API Server startup complete")
 
     yield
@@ -104,6 +136,24 @@ async def health_check() -> Dict[str, str]:
         "version": "1.0.0",
         "database": "connected" if db_connected else "disconnected",
         "environment": settings.environment,
+    }
+
+
+@app.get("/debug/cors", tags=["Health"])
+async def debug_cors() -> Dict:
+    """
+    Debug endpoint to verify CORS configuration.
+
+    Returns current CORS settings for troubleshooting.
+    Remove this endpoint in production or add authentication.
+    """
+    return {
+        "allowed_origins": settings.allowed_origins,
+        "origin_count": len(settings.allowed_origins),
+        "is_wildcard": "*" in settings.allowed_origins,
+        "environment": settings.environment,
+        "credentials_enabled": True,
+        "warning": "Wildcard origins violate CORS spec with credentials=True" if "*" in settings.allowed_origins else None,
     }
 
 
