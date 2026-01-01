@@ -1,6 +1,5 @@
 """User profile initialization and retrieval endpoints."""
 
-import logfire
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -25,24 +24,14 @@ async def initialize_user_profile(
 
     Idempotent - returns existing profile if already initialized.
     """
-    logfire.info(
-        "User init endpoint called",
-        user_id=supabase_user.id,
-        email=supabase_user.email
-    )
-
     # Check if user already exists
-    logfire.info("Querying database for existing user", user_id=supabase_user.id)
     existing_user = db.query(User).filter(User.id == supabase_user.id).first()
-    logfire.info("Database query completed", found_existing=bool(existing_user))
 
     if existing_user:
         # User already initialized - return existing profile
-        logfire.info("Returning existing user profile", user_id=supabase_user.id)
         return existing_user
 
     # Create new user in database
-    logfire.info("Creating new user in database", user_id=supabase_user.id)
     new_user = User(
         id=supabase_user.id,
         email=supabase_user.email,
@@ -51,13 +40,9 @@ async def initialize_user_profile(
     )
 
     try:
-        logfire.info("Adding new user to session", user_id=supabase_user.id)
         db.add(new_user)
-        logfire.info("Committing transaction", user_id=supabase_user.id)
         db.commit()
-        logfire.info("Refreshing user object", user_id=supabase_user.id)
         db.refresh(new_user)
-        logfire.info("User created successfully", user_id=supabase_user.id)
         return new_user
     except IntegrityError as e:
         db.rollback()

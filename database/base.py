@@ -15,13 +15,18 @@ from sqlalchemy.pool import QueuePool
 from config import settings
 
 # Create SQLAlchemy engine with connection pooling
+# Optimized for Render + Supabase connection pooler
 engine = create_engine(
     settings.database_url,
     poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,  # Verify connections before using them
-    pool_recycle=3600,   # Recycle connections after 1 hour
+    pool_size=10,         # Increased for production load
+    max_overflow=20,      # Increased overflow for burst traffic
+    pool_pre_ping=False,  # Disabled - pooler handles connection health
+    pool_recycle=300,     # Recycle connections every 5 minutes (pooler requirement)
+    connect_args={
+        "connect_timeout": 10,      # Fail fast if connection unavailable
+        "options": "-c statement_timeout=30000"  # 30 second query timeout
+    },
     echo=settings.is_development,  # Log SQL in development
 )
 
