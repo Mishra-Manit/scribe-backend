@@ -2,6 +2,7 @@
 Main FastAPI application entry point.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict
 
@@ -32,20 +33,42 @@ async def lifespan(app: FastAPI):
         debug=settings.debug,
     )
 
-    # Check database connection on startup
-    db_info = get_db_info()
-    if db_info['status'] == 'connected':
-        logfire.info(
-            "Database connection successful",
-            url=db_info['url'],
-            status=db_info['status'],
-        )
-    else:
-        logfire.error(
-            "Database connection failed",
-            url=db_info['url'],
-            status=db_info['status'],
-        )
+    # Check database connection on startup with retries for transient failures
+    max_attempts = 3
+    retry_delay_seconds = 2
+    db_info = None
+
+    for attempt in range(1, max_attempts + 1):
+        db_info = get_db_info()
+        if db_info["status"] == "connected":
+            logfire.info(
+                "Database connection successful",
+                url=db_info["url"],
+                status=db_info["status"],
+                attempt=attempt,
+                max_attempts=max_attempts,
+            )
+            break
+
+        if attempt < max_attempts:
+            logfire.warning(
+                "Database connection failed, retrying",
+                url=db_info["url"],
+                status=db_info["status"],
+                error=db_info.get("error"),
+                attempt=attempt,
+                max_attempts=max_attempts,
+                next_delay_seconds=retry_delay_seconds,
+            )
+            await asyncio.sleep(retry_delay_seconds)
+        else:
+            logfire.error(
+                "Database connection failed",
+                url=db_info["url"],
+                status=db_info["status"],
+                error=db_info.get("error"),
+                attempts=max_attempts,
+            )
 
     # Check Supabase client initialization
     supabase = get_supabase_client_safe()
