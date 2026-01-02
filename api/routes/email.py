@@ -1,6 +1,6 @@
 """Email generation API endpoints with async Celery pipeline."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from celery.result import AsyncResult
 from typing import List
@@ -14,7 +14,8 @@ from schemas.pipeline import (
     GenerateEmailRequest,
     GenerateEmailResponse,
     TaskStatusResponse,
-    EmailResponse
+    EmailResponse,
+    UpdateEmailRequest
 )
 from tasks.email_tasks import generate_email_task
 from celery_config import celery_app
@@ -151,13 +152,76 @@ async def get_email(
         return email
 
 
+@router.patch("/{email_id}", response_model=EmailResponse)
+async def update_email(
+    email_id: str,
+    request: UpdateEmailRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update email properties (currently supports displayed field only).
+
+    Users can only update their own emails. Returns 404 if email doesn't
+    exist or belongs to another user.
+    """
+    # Validate UUID format early
+    try:
+        email_uuid = ensure_uuid(email_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid email ID format: {str(e)}"
+        )
+
+    with logfire.span(
+        "api.update_email",
+        email_id=email_id,
+        user_id=str(current_user.id),
+        displayed=request.displayed
+    ):
+        # Query database for email with user_id filter (authorization)
+        email = db.query(Email).filter(
+            Email.id == email_uuid,
+            Email.user_id == current_user.id
+        ).first()
+
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Email not found or you don't have permission to access it"
+            )
+
+        # Update displayed field
+        email.displayed = request.displayed
+        db.commit()
+        db.refresh(email)
+
+        logfire.info(
+            "Email updated successfully",
+            email_id=email_id,
+            displayed=request.displayed
+        )
+
+        return email
+
+
 @router.get("/", response_model=List[EmailResponse])
 async def get_email_history(
     pagination: PaginationParams,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    include_discarded: bool = Query(
+        default=False,
+        description="Include discarded emails (displayed=false) in results"
+    ),
 ):
-    """Get user's email generation history, paginated and ordered by newest first."""
+    """
+    Get user's email generation history, paginated and ordered by newest first.
+
+    By default, only displayed emails are returned. Set include_discarded=true
+    to see all emails including discarded ones.
+    """
     limit = pagination["limit"]
     offset = pagination["offset"]
 
@@ -165,12 +229,18 @@ async def get_email_history(
         "api.email_history",
         user_id=str(current_user.id),
         limit=limit,
-        offset=offset
+        offset=offset,
+        include_discarded=include_discarded
     ):
-        # Query emails with pagination
-        emails = db.query(Email).filter(
-            Email.user_id == current_user.id
-        ).order_by(
+        # Build query with displayed filter
+        query = db.query(Email).filter(Email.user_id == current_user.id)
+
+        # Filter by displayed unless include_discarded is true
+        if not include_discarded:
+            query = query.filter(Email.displayed == True)
+
+        # Apply ordering and pagination
+        emails = query.order_by(
             Email.created_at.desc()
         ).limit(limit).offset(offset).all()
 

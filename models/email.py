@@ -88,6 +88,15 @@ class Email(Base):
         comment="Whether sufficient context was available for personalization"
     )
 
+    displayed = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        index=True,
+        comment="Whether email is visible in user's history (soft delete)"
+    )
+
     # Relationships
     user = relationship(
         "User",
@@ -99,6 +108,7 @@ class Email(Base):
         Index('ix_emails_user_id', 'user_id'),
         Index('ix_emails_created_at', 'created_at', postgresql_using='btree'),
         Index('ix_emails_user_created', 'user_id', 'created_at'),
+        Index('ix_emails_user_displayed', 'user_id', 'displayed'),
     )
 
     def __repr__(self) -> str:
@@ -124,5 +134,6 @@ class Email(Base):
             "template_type": self.template_type.value if self.template_type else None,
             "metadata": self.email_metadata or {},
             "is_confident": self.is_confident,
+            "displayed": self.displayed,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

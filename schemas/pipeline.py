@@ -141,6 +141,10 @@ class EmailResponse(BaseModel):
         default=False,
         description="Whether sufficient context was available for personalization"
     )
+    displayed: bool = Field(
+        default=True,
+        description="Whether email is visible in user's history"
+    )
     created_at: datetime
 
     model_config = ConfigDict(
@@ -159,7 +163,25 @@ class EmailResponse(BaseModel):
                     "generation_time": 4.2
                 },
                 "is_confident": True,
+                "displayed": True,
                 "created_at": "2025-01-13T10:30:00Z"
+            }
+        }
+    )
+
+
+class UpdateEmailRequest(BaseModel):
+    """Request body for PATCH /api/email/{email_id}"""
+
+    displayed: bool = Field(
+        ...,
+        description="Whether to display email in history (true=show, false=discard)"
+    )
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "displayed": False
             }
         }
     )
