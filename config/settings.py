@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     db_port: int = Field(default=5432, description="Database port")
     db_name: str = Field(..., description="Database name")
 
+    # Database Connection Pool Configuration
+    db_pool_size: int = Field(default=10, description="SQLAlchemy connection pool size")
+    db_pool_max_overflow: int = Field(default=20, description="SQLAlchemy pool overflow")
+    db_pool_recycle: int = Field(default=300, description="Recycle connections every N seconds")
+    db_connect_timeout: int = Field(default=10, description="Connection timeout in seconds")
+    db_statement_timeout: int = Field(default=30000, description="Statement timeout in milliseconds")
+
     # Supabase Configuration
     supabase_url: str = Field(..., description="Supabase project URL")
     supabase_service_role_key: str = Field(..., description="Supabase service role key for backend operations")
@@ -93,6 +100,32 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production mode."""
         return self.environment.lower() == "production"
+
+    @property
+    def is_celery_worker(self) -> bool:
+        """
+        Detect if running as a Celery worker on Render.
+        Workers need smaller pools to reduce stale connections when they're idle
+        and then suddenly need a database connection.
+        """
+        render_service_name = os.getenv("RENDER_SERVICE_NAME", "").lower()
+        return "backend" in render_service_name
+
+    @property
+    def effective_db_pool_size(self) -> int:
+        """
+        Return pool size adjusted for Celery workers.
+        Workers use smaller pools (2) vs API servers (10) to reduce stale connections.
+        """
+        return 2 if self.is_celery_worker else self.db_pool_size
+
+    @property
+    def effective_db_pool_max_overflow(self) -> int:
+        """
+        Return max overflow adjusted for Celery workers.
+        Workers use smaller overflow (5) vs API servers (20).
+        """
+        return 5 if self.is_celery_worker else self.db_pool_max_overflow
 
     @property
     def database_url(self) -> str:
