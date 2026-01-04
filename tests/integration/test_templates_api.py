@@ -11,7 +11,7 @@ This script tests the complete flow for the new template feature:
 5. GET  /api/user/profile         - Optionally inspect template_count (if exposed)
 
 Usage:
-    python test_templates_api.py
+    python tests/integration/test_templates_api.py
 
 Make sure your FastAPI server is running and JWT_TOKEN is valid for
 `API_BASE_URL`.

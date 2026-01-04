@@ -9,7 +9,7 @@ This script tests the complete flow:
 4. GET /api/email/ - View email history
 
 Usage:
-    python test_email_api.py
+    python tests/integration/test_email_api.py
 """
 
 import os
@@ -97,14 +97,14 @@ def test_generate_email() -> str | None:
         "email_template": (
             "Hey {{name}},\n\n"
             "I just finished going through your {{research}} work, especially the section on {{recent_publication_title}}, and it sparked a dozen ideas on the train ride home."
-            " I’m fascinated by how you’re coordinating things at {{lab_name}} and would love to compare notes on how you’re approaching {{specific_problem}}.\n\n"
-            "Here’s why I think a quick collaboration chat could be fun:\n"
-            "• I’m currently prototyping a lightweight workflow for {{shared_goal}} and would value your take on where the real bottlenecks are.\n"
+            " I'm fascinated by how you're coordinating things at {{lab_name}} and would love to compare notes on how you're approaching {{specific_problem}}.\n\n"
+            "Here's why I think a quick collaboration chat could be fun:\n"
+            "• I'm currently prototyping a lightweight workflow for {{shared_goal}} and would value your take on where the real bottlenecks are.\n"
             "• Your insights from {{recent_talk_or_event}} line up eerily well with what my team has been seeing in the field.\n"
             "• I have access to a small pilot group eager to try anything connected to {{application_area}}, so we could pressure-test ideas fast.\n\n"
-            "If you’re open to it, could we grab {{preferred_call_length}} sometime next week?"
-            " Happy to accommodate whatever time zone you’re juggling. I can also share a short brief before we chat so you can see if it’s worth the time.\n\n"
-            "Either way, thanks for all the generous writing you’ve put out—{{standout_takeaway}} has already nudged how I’m framing our internal roadmap.\n\n"
+            "If you're open to it, could we grab {{preferred_call_length}} sometime next week?"
+            " Happy to accommodate whatever time zone you're juggling. I can also share a short brief before we chat so you can see if it's worth the time.\n\n"
+            "Either way, thanks for all the generous writing you've put out—{{standout_takeaway}} has already nudged how I'm framing our internal roadmap.\n\n"
             "Talk soon,\n"
             "{{sender_signature}}"
         ),

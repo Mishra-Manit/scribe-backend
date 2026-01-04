@@ -5,13 +5,13 @@ Tests that all Phase 1 components are properly configured and can be imported.
 Run this after setting up infrastructure to verify everything is working.
 
 Usage:
-    python scripts/test_infrastructure.py
+    python tests/integration/test_infrastructure.py
 """
 import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import settings for configuration
