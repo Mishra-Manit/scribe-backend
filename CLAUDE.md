@@ -242,6 +242,52 @@ async def protected_route(
 - Use Supabase anon key in backend
 - Allow frontend direct database access
 
+### Template Generation Pattern
+
+When working with the template generation service (`services/template_generator.py`):
+
+**Flow**: PDF URL → Extract text → Generate template via Claude Haiku 4.5 → Return template text
+
+**Implementation**:
+```python
+from services.template_generator import generate_template_from_resume
+
+# Asynchronous generation (5-15 seconds)
+template_text = await generate_template_from_resume(
+    pdf_url="https://example.com/resume.pdf",
+    user_instructions="Professional tone for academic outreach"
+)
+```
+
+**Key Features**:
+- Synchronous API endpoint (user waits for result, no Celery task)
+- Uses Claude Haiku 4.5 for cost-effective generation
+- Extracts text from PDF via `extract_text_from_url()`
+- Retries: 3 attempts with 45s timeout
+- Usage limit: 5 templates per user (enforced in route handler)
+
+**Error Handling**:
+- Raises `ValueError` for PDF parsing errors (invalid URL, unreadable PDF)
+- Raises `Exception` for LLM generation failures (API errors, timeouts)
+- Always wrap in try/except in route handlers:
+
+```python
+@router.post("/api/templates/")
+async def generate_template(
+    request: GenerateTemplateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        template_text = await generate_template_from_resume(
+            pdf_url=request.pdf_url,
+            user_instructions=request.user_instructions
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"PDF error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+```
+
 ### Pipeline Development
 
 When working with the pipeline system:
@@ -361,34 +407,45 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 ```
 /pythonserver
 ├── api/                    # FastAPI routes and dependencies
-│   ├── routes/            # Route handlers (user.py, etc.)
-│   ├── dependencies.py    # Auth dependencies
-│   └── legacy/            # Old Flask code (deprecated)
+│   ├── routes/            # Route handlers (user.py, email.py, template.py)
+│   └── dependencies.py    # Auth dependencies (JWT validation)
 ├── models/                # SQLAlchemy ORM models
-│   ├── user.py
-│   └── email.py
+│   ├── user.py           # User model
+│   ├── email.py          # Email model
+│   └── template.py       # Template model
 ├── schemas/               # Pydantic schemas for validation
-│   └── auth.py
+│   ├── auth.py           # Authentication schemas
+│   ├── pipeline.py       # Email generation schemas
+│   └── template.py       # Template schemas
 ├── database/              # Database configuration and utilities
 │   ├── base.py           # SQLAlchemy Base and engine
 │   ├── session.py        # Session management
-│   └── dependencies.py   # Database dependencies
-├── services/              # External service integrations
-│   └── supabase.py       # Supabase client
+│   ├── dependencies.py   # Database dependencies
+│   └── utils.py          # Health checks, connection validation
+├── services/              # External service integrations and utilities
+│   ├── supabase.py       # Supabase client singleton
+│   └── template_generator.py  # AI template generation from resume
+├── utils/                 # Shared utilities
+│   ├── uuid_helpers.py   # UUID validation and conversion
+│   └── validators.py     # Common validators
 ├── config/                # Application configuration
-│   └── settings.py       # Pydantic Settings
-├── pipeline/              # Email generation pipeline (in development)
+│   └── settings.py       # Pydantic Settings (environment variables)
+├── pipeline/              # Email generation pipeline (production-ready)
 │   ├── core/             # Pipeline runner and base classes
-│   ├── models/           # Pipeline data models
+│   ├── models/           # Pipeline data models (PipelineData, StepResult)
 │   └── steps/            # Pipeline step implementations
-│       ├── template_parser/
-│       ├── web_scraper/
-│       ├── arxiv_helper/
-│       └── email_composer/
+│       ├── template_parser/    # Step 1: Parse template and extract search terms
+│       ├── web_scraper/        # Step 2: Search web and summarize content
+│       ├── arxiv_helper/       # Step 3: Fetch academic papers (if RESEARCH)
+│       └── email_composer/     # Step 4: Generate final email and save to DB
+├── tasks/                 # Celery background tasks
+│   └── email_tasks.py    # Email generation task orchestration
+├── observability/         # Monitoring and logging
+│   └── logfire_config.py # Logfire initialization
 ├── alembic/               # Database migrations
 │   └── versions/         # Migration files
-├── prompts/               # Prompt templates for various tasks
-├── main.py               # Application entry point
+├── main.py               # Application entry point (FastAPI app)
+├── celery_config.py      # Celery configuration
 ├── requirements.txt      # Python dependencies
 └── alembic.ini          # Alembic configuration
 ```
@@ -409,7 +466,7 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 ### Migration from Firebase
 - Original codebase used Firebase (now deprecated)
 - All authentication migrated to Supabase
-- Some legacy code remains in `api/legacy/` but is not used
+- All legacy code has been removed from the codebase
 
 ### Pipeline Integration
 - Pipeline system is under active development

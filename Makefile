@@ -1,6 +1,6 @@
 .PHONY: help install serve run celery-worker flower celery-reset stop-all clean
-.PHONY: migrate migration migrate-down db-current test-infra
-.PHONY: redis-start redis-stop redis-ping check-env create-env lint lint-fix format
+.PHONY: migrate migration migrate-down db-current db-history test test-unit test-integration test-coverage test-infra
+.PHONY: redis-start redis-stop redis-ping check-env create-env lint lint-fix format type-check
 
 # Load environment variables from .env file if it exists
 ifneq (,$(wildcard .env))
@@ -51,7 +51,7 @@ run: serve ## Alias for serve command
 
 celery-worker: ## Start Celery worker only
 	@echo "Starting Celery worker..."
-	@bash -c "source venv/bin/activate 2>/dev/null || true && $(load_env) celery -A celery_config.celery_app worker --loglevel=info --queues=email_default --concurrency=4"
+	@bash -c "source venv/bin/activate 2>/dev/null || true && $(load_env) celery -A celery_config.celery_app worker --loglevel=info --queues=email_default --concurrency=1"
 
 flower: ## Start Flower monitoring UI on port 5555
 	@echo "Starting Flower at http://localhost:5555"
@@ -142,6 +142,23 @@ check-env: ## Check environment configuration (validates settings.py)
 	echo "❌ Missing required environment variables. Run 'make create-env' and update .env file"
 
 # Testing
+test: ## Run all tests
+	@echo "Running all tests..."
+	@bash -c "source venv/bin/activate 2>/dev/null || true && pytest"
+
+test-unit: ## Run only unit tests
+	@echo "Running unit tests..."
+	@bash -c "source venv/bin/activate 2>/dev/null || true && pytest -m unit"
+
+test-integration: ## Run only integration tests
+	@echo "Running integration tests..."
+	@bash -c "source venv/bin/activate 2>/dev/null || true && pytest -m integration"
+
+test-coverage: ## Run tests with coverage report
+	@echo "Running tests with coverage..."
+	@bash -c "source venv/bin/activate 2>/dev/null || true && pytest --cov=pipeline --cov=api --cov=models --cov=services --cov-report=html --cov-report=term"
+	@echo "✅ Coverage report generated at htmlcov/index.html"
+
 test-infra: ## Test infrastructure (Redis, Celery, Logfire)
 	@echo "Testing infrastructure..."
 	@python scripts/test_infrastructure.py
@@ -154,6 +171,10 @@ lint: ## Run all linting checks (black, flake8, mypy)
 	flake8 . || true
 	@echo "Running mypy..."
 	mypy . || true
+
+type-check: ## Run mypy type checker
+	@echo "Running mypy type checker..."
+	@bash -c "source venv/bin/activate 2>/dev/null || true && mypy . || true"
 
 lint-fix: ## Auto-fix linting issues where possible
 	@echo "Running black formatter..."

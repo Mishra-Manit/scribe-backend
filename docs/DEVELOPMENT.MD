@@ -197,7 +197,7 @@ make test-integration  # Run only integration tests
 make test-coverage  # Run tests with coverage report
 
 # Code Quality
-make lint           # Run linter (ruff)
+make lint           # Run all linting checks (black, flake8, mypy)
 make format         # Format code (black)
 make type-check     # Run type checker (mypy)
 ```
@@ -252,9 +252,21 @@ alembic history --verbose
 
 ### Testing Commands
 
-**Running Tests**:
+**Using Makefile shortcuts** (runs pytest in venv automatically):
 
 ```bash
+make test               # Run all tests
+make test-unit          # Unit tests only
+make test-integration   # Integration tests only
+make test-coverage      # With HTML coverage report at htmlcov/index.html
+```
+
+**Using pytest directly** (recommended for development):
+
+```bash
+# IMPORTANT: Activate virtual environment first
+source venv/bin/activate
+
 # All tests
 pytest
 
@@ -276,16 +288,14 @@ pytest -m "not slow"        # Skip slow tests
 pytest -s
 
 # With coverage
-pytest --cov=pipeline --cov-report=html
+pytest --cov=pipeline --cov=api --cov=models --cov=services --cov-report=html --cov-report=term
 # View report: open htmlcov/index.html
 ```
 
-**Important**: Always run from project root with virtual environment:
-
-```bash
-source venv/bin/activate
-pytest
-```
+**Critical Requirements**:
+- ✅ Always run from project root (`/pythonserver`), never from subdirectories
+- ✅ Activate virtual environment first: `source venv/bin/activate`
+- ✅ Use venv's pytest: `which pytest` should show `/path/to/pythonserver/venv/bin/pytest`
 
 ---
 

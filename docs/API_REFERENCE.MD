@@ -482,6 +482,163 @@ interface EmailResponse {
 
 ---
 
+### Template Management
+
+#### POST /api/templates/
+
+**Generate email template from resume** (synchronous, 5-15 seconds).
+
+**Request**:
+```http
+POST /api/templates/
+Authorization: Bearer {jwt_token}
+Content-Type: application/json
+
+{
+  "pdf_url": "https://example.com/resume.pdf",
+  "user_instructions": "Professional tone for academic outreach. Emphasize research experience."
+}
+```
+
+**Request Schema**:
+```typescript
+interface GenerateTemplateRequest {
+  pdf_url: string           // Publicly accessible PDF URL (HttpUrl validated)
+  user_instructions: string // Custom instructions for template generation (10-2000 chars)
+}
+```
+
+**Response** (201 Created):
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "user-uuid-here",
+  "pdf_url": "https://example.com/resume.pdf",
+  "template_text": "Hey {{name}}, I'm [Your Name], a [Your Role] with expertise in {{research_area}}. I noticed your work on {{specific_topic}} and wanted to reach out...",
+  "user_instructions": "Professional tone for academic outreach. Emphasize research experience.",
+  "created_at": "2025-01-24T10:30:00Z"
+}
+```
+
+**How It Works**:
+1. Backend fetches PDF from provided URL
+2. Extracts text content from PDF
+3. Sends text + user instructions to Claude Haiku 4.5
+4. Returns generated template with placeholder syntax (e.g., `{{name}}`, `{{research}}`)
+5. Template saved to database for reuse
+
+**Usage Limits**:
+- **Maximum 5 templates per user** (enforced server-side)
+- Synchronous operation (user waits for completion, no background task)
+- Template generation takes 5-15 seconds typically
+
+**Errors**:
+- `400 Bad Request`: PDF parsing failed (invalid URL, unreadable PDF, network error)
+- `401 Unauthorized`: Invalid or missing JWT token
+- `422 Unprocessable Entity`: Validation error (invalid URL format, instructions too long/short)
+- `429 Too Many Requests`: User has reached 5 template limit
+- `500 Internal Server Error`: LLM generation failed (API errors, timeouts)
+
+**Example Usage**:
+
+```bash
+curl -X POST https://api.scribe.com/api/templates/ \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pdf_url": "https://storage.example.com/resume.pdf",
+    "user_instructions": "Create a friendly but professional email template for reaching out to professors about research opportunities."
+  }'
+```
+
+---
+
+#### GET /api/templates/
+
+**List user's templates** (paginated, newest first).
+
+**Request**:
+```http
+GET /api/templates/?limit=20&offset=0
+Authorization: Bearer {jwt_token}
+```
+
+**Query Parameters**:
+- `limit` (optional): Number of results (default: 20, max: 100)
+- `offset` (optional): Pagination offset (default: 0)
+
+**Response** (200 OK):
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "user_id": "user-uuid-here",
+    "pdf_url": "https://example.com/resume.pdf",
+    "template_text": "Hey {{name}}, I'm...",
+    "user_instructions": "Professional tone for academic outreach",
+    "created_at": "2025-01-24T10:30:00Z"
+  },
+  {
+    "id": "660e8400-e29b-41d4-a716-446655440001",
+    "user_id": "user-uuid-here",
+    "pdf_url": "https://example.com/resume_v2.pdf",
+    "template_text": "Dear {{name}}, I am...",
+    "user_instructions": "Formal tone for corporate outreach",
+    "created_at": "2025-01-23T15:20:00Z"
+  }
+]
+```
+
+**Errors**:
+- `401 Unauthorized`: Invalid or missing JWT token
+
+**Example Usage**:
+
+```bash
+curl https://api.scribe.com/api/templates/?limit=10 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+---
+
+#### GET /api/templates/{template_id}
+
+**Get specific template by ID**.
+
+**Request**:
+```http
+GET /api/templates/550e8400-e29b-41d4-a716-446655440000
+Authorization: Bearer {jwt_token}
+```
+
+**Response** (200 OK):
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "user_id": "user-uuid-here",
+  "pdf_url": "https://example.com/resume.pdf",
+  "template_text": "Hey {{name}}, I'm [Your Name]...",
+  "user_instructions": "Professional tone for academic outreach",
+  "created_at": "2025-01-24T10:30:00Z"
+}
+```
+
+**Errors**:
+- `400 Bad Request`: Invalid UUID format
+- `401 Unauthorized`: Invalid or missing JWT token
+- `404 Not Found`: Template doesn't exist or user doesn't own it
+
+**Security Note**: Users can only access their own templates (enforced by user_id check).
+
+**Example Usage**:
+
+```bash
+curl https://api.scribe.com/api/templates/550e8400-e29b-41d4-a716-446655440000 \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+---
+
 ### Health & System
 
 #### GET /health
