@@ -39,12 +39,7 @@ class Settings(BaseSettings):
     db_port: int = Field(default=6543, description="Transaction pooler port (6543) or Session pooler port (5432)")
     db_name: str = Field(..., description="Database name")
 
-    # Database Connection Pool Configuration
-    # DEPRECATED: These settings are not used with NullPool (transaction pooler mode)
-    # Kept for backward compatibility but have no effect
-    db_pool_size: int = Field(default=10, description="[DEPRECATED] Not used with NullPool")
-    db_pool_max_overflow: int = Field(default=20, description="[DEPRECATED] Not used with NullPool")
-    db_pool_recycle: int = Field(default=300, description="[DEPRECATED] Not used with NullPool")
+    # Database Connection Configuration
     db_connect_timeout: int = Field(default=10, description="Connection timeout in seconds")
     db_statement_timeout: int = Field(default=30000, description="Statement timeout in milliseconds")
 
@@ -136,33 +131,6 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production mode."""
         return self.environment.lower() == "production"
-
-    # DEPRECATED: Pool sizing methods no longer needed with NullPool
-    # Kept for backward compatibility but return static values
-    @property
-    def is_celery_worker(self) -> bool:
-        """
-        [DEPRECATED] No longer used with NullPool.
-        Detect if running as a Celery worker on Render.
-        """
-        render_service_name = os.getenv("RENDER_SERVICE_NAME", "").lower()
-        return "backend" in render_service_name
-
-    @property
-    def effective_db_pool_size(self) -> int:
-        """
-        [DEPRECATED] Not used with NullPool (transaction pooler mode).
-        Return pool size adjusted for Celery workers.
-        """
-        return 2 if self.is_celery_worker else self.db_pool_size
-
-    @property
-    def effective_db_pool_max_overflow(self) -> int:
-        """
-        [DEPRECATED] Not used with NullPool (transaction pooler mode).
-        Return max overflow adjusted for Celery workers.
-        """
-        return 5 if self.is_celery_worker else self.db_pool_max_overflow
 
     @property
     def database_url(self) -> str:

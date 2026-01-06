@@ -470,7 +470,6 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 - NullPool creates fresh connections per request, immediately discarded after use
 - Eliminates stale connection issues common with QueuePool + transaction pooler
 - Optimal for auto-scaling deployments on Render.com
-- Trade-off: ~800ms query time vs ~200ms with QueuePool, but better reliability
 
 **Port Configuration:**
 - `6543`: Transaction pooler (recommended for Render.com)
@@ -480,11 +479,6 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 - Direct PostgreSQL connection to Supabase (not Supabase SDK for queries)
 - SQLAlchemy for ORM and query building
 - Connection string requires `sslmode=require` for Supabase
-
-### Migration from Firebase
-- Original codebase used Firebase (now deprecated)
-- All authentication migrated to Supabase
-- All legacy code has been removed from the codebase
 
 ### Pipeline Integration
 - Pipeline system is under active development
