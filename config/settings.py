@@ -40,7 +40,10 @@ class Settings(BaseSettings):
     db_name: str = Field(..., description="Database name")
 
     # Database Connection Configuration
-    db_connect_timeout: int = Field(default=10, description="Connection timeout in seconds")
+    db_connect_timeout: int = Field(
+        default=30,
+        description="Connection timeout in seconds (30s handles cold starts and network latency)"
+    )
     db_statement_timeout: int = Field(default=30000, description="Statement timeout in milliseconds")
 
     # Supabase Configuration
