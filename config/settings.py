@@ -2,7 +2,7 @@
 
 import os
 from typing import List
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # NOTE: Logfire configured in main.py/conftest.py, not here (prevents test conflicts)
@@ -36,13 +36,15 @@ class Settings(BaseSettings):
     db_user: str = Field(..., description="Database user")
     db_password: str = Field(..., description="Database password")
     db_host: str = Field(..., description="Database host")
-    db_port: int = Field(default=5432, description="Database port")
+    db_port: int = Field(default=6543, description="Transaction pooler port (6543) or Session pooler port (5432)")
     db_name: str = Field(..., description="Database name")
 
     # Database Connection Pool Configuration
-    db_pool_size: int = Field(default=10, description="SQLAlchemy connection pool size")
-    db_pool_max_overflow: int = Field(default=20, description="SQLAlchemy pool overflow")
-    db_pool_recycle: int = Field(default=300, description="Recycle connections every N seconds")
+    # DEPRECATED: These settings are not used with NullPool (transaction pooler mode)
+    # Kept for backward compatibility but have no effect
+    db_pool_size: int = Field(default=10, description="[DEPRECATED] Not used with NullPool")
+    db_pool_max_overflow: int = Field(default=20, description="[DEPRECATED] Not used with NullPool")
+    db_pool_recycle: int = Field(default=300, description="[DEPRECATED] Not used with NullPool")
     db_connect_timeout: int = Field(default=10, description="Connection timeout in seconds")
     db_statement_timeout: int = Field(default=30000, description="Statement timeout in milliseconds")
 
@@ -91,6 +93,40 @@ class Settings(BaseSettings):
             raise ValueError("Database host cannot be empty")
         return v
 
+    @field_validator("db_port")
+    @classmethod
+    def validate_db_port_matches_host(cls, v: int) -> int:
+        """
+        Validate that DB_PORT matches the connection mode.
+        - Port 6543: Transaction pooler (for auto-scaling, serverless)
+        - Port 5432: Session pooler or direct connection
+        """
+        if v not in [5432, 6543]:
+            raise ValueError(
+                f"Invalid database port: {v}. "
+                "Use 6543 for transaction pooler or 5432 for session pooler."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_pooler_configuration(self):
+        """
+        Warn if DB_HOST and DB_PORT don't match expected transaction pooler setup.
+        Transaction pooler should use:
+        - Port 6543
+        - Host containing '.pooler.supabase.com'
+        """
+        if self.db_port == 6543:
+            if ".pooler.supabase.com" not in self.db_host:
+                import warnings
+                warnings.warn(
+                    f"Port 6543 is for transaction pooler, but DB_HOST "
+                    f"({self.db_host}) doesn't contain '.pooler.supabase.com'. "
+                    "Verify you're using the correct connection string."
+                )
+
+        return self
+
     @property
     def is_development(self) -> bool:
         """Check if running in development mode."""
@@ -101,12 +137,13 @@ class Settings(BaseSettings):
         """Check if running in production mode."""
         return self.environment.lower() == "production"
 
+    # DEPRECATED: Pool sizing methods no longer needed with NullPool
+    # Kept for backward compatibility but return static values
     @property
     def is_celery_worker(self) -> bool:
         """
+        [DEPRECATED] No longer used with NullPool.
         Detect if running as a Celery worker on Render.
-        Workers need smaller pools to reduce stale connections when they're idle
-        and then suddenly need a database connection.
         """
         render_service_name = os.getenv("RENDER_SERVICE_NAME", "").lower()
         return "backend" in render_service_name
@@ -114,16 +151,16 @@ class Settings(BaseSettings):
     @property
     def effective_db_pool_size(self) -> int:
         """
+        [DEPRECATED] Not used with NullPool (transaction pooler mode).
         Return pool size adjusted for Celery workers.
-        Workers use smaller pools (2) vs API servers (10) to reduce stale connections.
         """
         return 2 if self.is_celery_worker else self.db_pool_size
 
     @property
     def effective_db_pool_max_overflow(self) -> int:
         """
+        [DEPRECATED] Not used with NullPool (transaction pooler mode).
         Return max overflow adjusted for Celery workers.
-        Workers use smaller overflow (5) vs API servers (20).
         """
         return 5 if self.is_celery_worker else self.db_pool_max_overflow
 

@@ -8,29 +8,22 @@ This module provides the core database infrastructure:
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import NullPool
 
 from config import settings
 
 
 def _create_engine():
     """
-    Create SQLAlchemy engine with environment-aware pool configuration.
-
-    For Celery workers: Smaller pools to reduce stale connections during idle periods.
-    For API servers: Larger pools for concurrent request handling.
-
-    Connection validation (pool_pre_ping=True) ensures stale connections are
-    detected and refreshed before use—critical for long-running workers that may
-    lose network connectivity during idle periods.
+    Create SQLAlchemy engine with NullPool for Supabase Transaction Pooler.
+    - Eliminates double-pooling (app-side + server-side)
+    - Prevents stale connection accumulation
+    - Optimizes for auto-scaling deployments (Render.com)
+    - Connections are created per-request and immediately discarded
     """
     return create_engine(
         settings.database_url,
-        poolclass=QueuePool,
-        pool_size=settings.effective_db_pool_size,
-        max_overflow=settings.effective_db_pool_max_overflow,
-        pool_pre_ping=True,  # Validate connections before use (catches stale pooler connections)
-        pool_recycle=settings.db_pool_recycle,  # Recycle connections to work around pooler limits
+        poolclass=NullPool,
         connect_args={
             "connect_timeout": settings.db_connect_timeout,
             "options": f"-c statement_timeout={settings.db_statement_timeout}",

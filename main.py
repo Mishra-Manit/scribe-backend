@@ -34,6 +34,14 @@ async def lifespan(app: FastAPI):
     )
 
     # Check database connection on startup with retries for transient failures
+    logfire.info(
+        "Database configuration",
+        port=settings.db_port,
+        host_type="transaction_pooler" if ".pooler." in settings.db_host else "direct",
+        pool_class="NullPool",
+        connect_timeout=settings.db_connect_timeout,
+    )
+
     max_attempts = 3
     retry_delay_seconds = 2
     db_info = None
@@ -44,6 +52,7 @@ async def lifespan(app: FastAPI):
             logfire.info(
                 "Database connection successful",
                 url=db_info["url"],
+                port=settings.db_port,
                 status=db_info["status"],
                 attempt=attempt,
                 max_attempts=max_attempts,
@@ -54,6 +63,7 @@ async def lifespan(app: FastAPI):
             logfire.warning(
                 "Database connection failed, retrying",
                 url=db_info["url"],
+                port=settings.db_port,
                 status=db_info["status"],
                 error=db_info.get("error"),
                 attempt=attempt,
@@ -65,6 +75,7 @@ async def lifespan(app: FastAPI):
             logfire.error(
                 "Database connection failed",
                 url=db_info["url"],
+                port=settings.db_port,
                 status=db_info["status"],
                 error=db_info.get("error"),
                 attempts=max_attempts,

@@ -459,6 +459,24 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 - All sensitive credentials in .env (gitignored)
 
 ### Database Connection
+
+- **Connection Mode**: Transaction Pooler (port 6543)
+- **Pooling Strategy**: NullPool (no application-side pooling)
+- **Host**: `*.pooler.supabase.com` (Supavisor transaction pooler)
+- **SSL**: Required (`sslmode=require`)
+
+**Why NullPool?**
+- Supabase's transaction pooler (Supavisor) handles connection pooling server-side
+- NullPool creates fresh connections per request, immediately discarded after use
+- Eliminates stale connection issues common with QueuePool + transaction pooler
+- Optimal for auto-scaling deployments on Render.com
+- Trade-off: ~800ms query time vs ~200ms with QueuePool, but better reliability
+
+**Port Configuration:**
+- `6543`: Transaction pooler (recommended for Render.com)
+- `5432`: Session pooler or direct connection (not recommended for auto-scaling)
+
+**Architecture:**
 - Direct PostgreSQL connection to Supabase (not Supabase SDK for queries)
 - SQLAlchemy for ORM and query building
 - Connection string requires `sslmode=require` for Supabase

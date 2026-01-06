@@ -30,7 +30,7 @@ graph TB
 **Tech Stack**:
 - **Backend**: FastAPI (Python 3.13), SQLAlchemy, Alembic
 - **Task Queue**: Celery 5.3+ with Redis (broker + results)
-- **Database**: PostgreSQL via Supabase (direct connection, not SDK)
+- **Database**: PostgreSQL via Supabase transaction pooler (not SDK)
 - **AI**: Anthropic Claude (Sonnet 4.5 for composition, Haiku 4.5 for analysis)
 - **Web Scraping**: Playwright (headless Chrome), Google Custom Search API
 - **Auth**: Supabase Auth (JWT validation only, all DB ops via backend)

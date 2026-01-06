@@ -81,11 +81,11 @@ playwright install chromium
 Create `.env` file (see `.env.example`):
 
 ```bash
-# Database (Supabase Direct Connection)
-DB_USER=postgres
+# Database (Supabase Transaction Pooler)
+DB_USER=postgres.<project-ref>
 DB_PASSWORD=your-password
-DB_HOST=db.xxx.supabase.co
-DB_PORT=5432
+DB_HOST=aws-1-<region>.pooler.supabase.com
+DB_PORT=6543
 DB_NAME=postgres
 
 # Supabase
