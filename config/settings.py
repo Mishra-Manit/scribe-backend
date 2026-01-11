@@ -52,8 +52,7 @@ class Settings(BaseSettings):
 
     # External APIs
     anthropic_api_key: str = Field(..., description="Anthropic API key")
-    google_api_key: str = Field(default="", description="Google API key for Custom Search")
-    google_cse_id: str = Field(default="", description="Google Custom Search Engine ID")
+    exa_api_key: str = Field(default="", description="Exa API key for web search")
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")

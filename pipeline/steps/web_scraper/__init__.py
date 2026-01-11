@@ -1,9 +1,10 @@
 """
 Web Scraper Step
 
-Fetches and scrapes web content using Google Custom Search + BeautifulSoup.
+Fetches and synthesizes professor information using Exa Search API.
 """
 
 from .main import WebScraperStep
+from .exa_search import ExaSearchClient, ExaCitation, ExaAnswerResult
 
-__all__ = ["WebScraperStep"]
+__all__ = ["WebScraperStep", "ExaSearchClient", "ExaCitation", "ExaAnswerResult"]
