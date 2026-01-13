@@ -20,8 +20,8 @@ class EmailComposerStep(BasePipelineStep):
     def __init__(self):
         super().__init__(step_name="email_composer")
 
-        # Configuration
-        self.model = "anthropic:claude-sonnet-4-5"
+        # Configuration (hot-swappable via environment variable)
+        self.model = settings.email_composer_model
         self.temperature = 0.7
         self.max_tokens = 2000
 

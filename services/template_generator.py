@@ -3,6 +3,7 @@
 import re
 import logfire
 from pathlib import Path
+from config.settings import settings
 from utils.llm_agent import run_agent
 from utils.pdf_parser import extract_text_from_url
 
@@ -13,7 +14,6 @@ PROMPT_PATH = Path(__file__).parent / "prompts" / "template_generation.md"
 async def generate_template_from_resume(
     pdf_url: str,
     user_instructions: str,
-    model: str = "anthropic:claude-haiku-4-5"
 ) -> str:
     """Generate email template from resume PDF using AI with user instructions."""
     with logfire.span("template_generation.generate", pdf_url=pdf_url):

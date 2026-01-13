@@ -20,8 +20,8 @@ class TemplateParserStep(BasePipelineStep):
     def __init__(self):
         super().__init__(step_name="template_parser")
 
-        # Model configuration
-        self.model = "anthropic:claude-haiku-4-5"
+        # Model configuration (hot-swappable via environment variable)
+        self.model = settings.template_parser_model
         self.max_tokens = 2000
         self.temperature = 0.1  # Low temperature for consistent structured output
 
