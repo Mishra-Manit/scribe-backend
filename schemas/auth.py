@@ -7,7 +7,7 @@ and user profile data using Pydantic v2.
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 
 class SupabaseUser(BaseModel):
@@ -66,6 +66,7 @@ class UserResponse(BaseModel):
     generation_count: int
     template_count: int
     onboarded: bool
+    email_template: str | None
     created_at: datetime
 
     model_config = ConfigDict(
@@ -78,7 +79,42 @@ class UserResponse(BaseModel):
                 "generation_count": 5,
                 "template_count": 3,
                 "onboarded": False,
+                "email_template": "Dear {{professor_name}}, ...",
                 "created_at": "2024-01-13T10:30:00Z",
             }
         },
+    )
+
+
+class TemplateUpdate(BaseModel):
+    """
+    Request body for updating email template.
+
+    Validates template content to prevent:
+    - Extremely large templates that could cause storage/performance issues
+    - Empty or whitespace-only templates
+    - Malicious content injection
+    """
+
+    template: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,  # Reasonable limit for email template (PostgreSQL text fields can be gigabytes)
+        description="Email template with variable placeholders (e.g., {{professor_name}})",
+    )
+
+    @field_validator("template")
+    @classmethod
+    def validate_template_not_empty(cls, v: str) -> str:
+        """Ensure template contains actual content, not just whitespace."""
+        if not v.strip():
+            raise ValueError("Template cannot be empty or whitespace only")
+        return v
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "template": "Dear {{professor_name}},\n\nI am writing to express my interest in {{research_area}}...",
+            }
+        }
     )

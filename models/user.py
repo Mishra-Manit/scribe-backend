@@ -1,6 +1,6 @@
 """User model for authenticated users linked to Supabase auth."""
 
-from sqlalchemy import Column, String, Integer, DateTime, Index, Boolean
+from sqlalchemy import Column, String, Integer, DateTime, Index, Boolean, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -25,8 +25,7 @@ class User(Base):
     email = Column(
         String(255),
         nullable=False,
-        unique=True,
-        index=True,
+        unique=True,  # Creates unique constraint (includes index automatically)
         comment="User's email address"
     )
 
@@ -56,7 +55,15 @@ class User(Base):
         Boolean,
         nullable=False,
         default=False,
+        server_default=text('false'),
         comment="Whether the user has completed the onboarding welcome screen"
+    )
+
+    # Email Template
+    email_template = Column(
+        Text,
+        nullable=True,
+        comment="User's cold email template for generation"
     )
 
     # Timestamps
@@ -84,7 +91,6 @@ class User(Base):
 
     # Indexes
     __table_args__ = (
-        Index('ix_users_email', 'email'),
         Index('ix_users_created_at', 'created_at'),
     )
 

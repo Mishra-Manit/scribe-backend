@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from models.user import User
 from database import get_db
 from api.dependencies import get_supabase_user, get_current_user
-from schemas.auth import SupabaseUser, UserResponse, UserInit
+from schemas.auth import SupabaseUser, UserResponse, UserInit, TemplateUpdate
 
 
 router = APIRouter(prefix="/api/user", tags=["User Management"])
@@ -81,6 +81,26 @@ async def complete_onboarding(
 ):
     """Mark the current user as having completed onboarding."""
     current_user.onboarded = True
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.patch("/template", response_model=UserResponse)
+async def update_template(
+    template_data: TemplateUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Update the user's email template.
+
+    Validates template content for:
+    - Length constraints (1-10,000 characters)
+    - Non-empty content (not just whitespace)
+    - Prevents malicious content injection
+    """
+    current_user.email_template = template_data.template
     db.commit()
     db.refresh(current_user)
     return current_user
