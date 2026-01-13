@@ -169,6 +169,7 @@ settings = Settings()
 # Ensure SDKs that read ANTHROPIC_API_KEY at import time see the configured value.
 os.environ.setdefault("ANTHROPIC_API_KEY", settings.anthropic_api_key)
 
+os.environ.setdefault("FIREWORKS_API_KEY", settings.fireworks_api_key)
 
 def get_settings() -> "Settings":
     """Return the singleton settings instance.
