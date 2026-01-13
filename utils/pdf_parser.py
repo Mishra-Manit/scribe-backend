@@ -8,15 +8,7 @@ from io import BytesIO
 
 
 async def extract_text_from_url(pdf_url: str, timeout: int = 30) -> str:
-    """
-    Fetch PDF from URL and extract text content.
-
-    Returns:
-        Cleaned text content from PDF
-
-    Raises:
-        ValueError: If PDF is invalid, empty, scanned, or has insufficient text
-    """
+    """Extract text content from PDF at given URL using pypdf."""
     with logfire.span("pdf_parser.extract_text_from_url", pdf_url=pdf_url):
         try:
             # Fetch PDF from URL

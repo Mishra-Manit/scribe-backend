@@ -9,20 +9,7 @@ from fastapi import HTTPException, status
 
 
 def validate_template_ownership(db: Session, template_id: UUID, user_id: UUID):
-    """
-    Validate that a template exists and belongs to the specified user.
-
-    Args:
-        db: Database session
-        template_id: Template UUID to validate
-        user_id: User UUID who should own the template
-
-    Returns:
-        Template object if found and owned by user
-
-    Raises:
-        HTTPException: 404 if template not found or not owned by user
-    """
+    """Verify user owns template, raise 404 if not found or unauthorized."""
     from models.template import Template
 
     # Query with authorization filter (returns 404 for both cases)

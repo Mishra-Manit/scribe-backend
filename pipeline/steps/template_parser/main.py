@@ -15,11 +15,7 @@ from .utils import extract_placeholders
 
 
 class TemplateParserStep(BasePipelineStep):
-    """
-    Parse template using Claude to extract search terms and classify type.
-
-    Sets: search_terms, template_type, template_analysis
-    """
+    """Parse template using Claude to extract search terms and classify type."""
 
     def __init__(self):
         super().__init__(step_name="template_parser")

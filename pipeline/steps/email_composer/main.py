@@ -15,11 +15,7 @@ from .db_utils import write_email_to_db, increment_user_generation_count
 
 
 class EmailComposerStep(BasePipelineStep):
-    """
-    Generate final email with Claude and write to database.
-
-    Sets: final_email, composition_metadata, metadata["email_id"]
-    """
+    """Generate final email with Claude and write to database."""
 
     def __init__(self):
         super().__init__(step_name="email_composer")

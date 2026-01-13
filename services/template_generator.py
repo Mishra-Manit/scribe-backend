@@ -15,16 +15,7 @@ async def generate_template_from_resume(
     user_instructions: str,
     model: str = "anthropic:claude-haiku-4-5"
 ) -> str:
-    """
-    Generate email template from resume PDF and user instructions
-
-    Returns:
-        Generated template text (150-250 words with placeholders)
-
-    Raises:
-        ValueError: If PDF parsing fails or text extraction insufficient
-        Exception: If LLM generation fails after retries
-    """
+    """Generate email template from resume PDF using AI with user instructions."""
     with logfire.span("template_generation.generate", pdf_url=pdf_url):
         try:
             # Extract resume text from PDF
