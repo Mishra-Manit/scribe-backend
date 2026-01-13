@@ -42,11 +42,9 @@ async def lifespan(app: FastAPI):
         connect_timeout=settings.db_connect_timeout,
     )
 
-    max_attempts = 3
-    retry_delay_seconds = 2
-    db_info = None
-
-    for attempt in range(1, max_attempts + 1):
+    # Check database connection using shared retry logic
+    async def check_db_with_logging():
+        """Check database connection and log result."""
         db_info = get_db_info()
         if db_info["status"] == "connected":
             logfire.info(
@@ -54,32 +52,35 @@ async def lifespan(app: FastAPI):
                 url=db_info["url"],
                 port=settings.db_port,
                 status=db_info["status"],
-                attempt=attempt,
-                max_attempts=max_attempts,
             )
-            break
-
-        if attempt < max_attempts:
-            logfire.warning(
-                "Database connection failed, retrying",
-                url=db_info["url"],
-                port=settings.db_port,
-                status=db_info["status"],
-                error=db_info.get("error"),
-                attempt=attempt,
-                max_attempts=max_attempts,
-                next_delay_seconds=retry_delay_seconds,
-            )
-            await asyncio.sleep(retry_delay_seconds)
         else:
-            logfire.error(
-                "Database connection failed",
+            # Raise OperationalError to trigger retry logic
+            from sqlalchemy.exc import OperationalError
+
+            error_msg = db_info.get("error", "Connection check failed")
+            logfire.warning(
+                "Database connection check failed",
                 url=db_info["url"],
                 port=settings.db_port,
                 status=db_info["status"],
-                error=db_info.get("error"),
-                attempts=max_attempts,
+                error=error_msg,
             )
+            raise OperationalError(
+                statement=None, params=None, orig=Exception(error_msg)
+            )
+        return db_info
+
+    from database import retry_on_db_error_async
+
+    try:
+        db_info = await retry_on_db_error_async(check_db_with_logging)
+    except Exception as e:
+        logfire.error(
+            "Database connection failed after retries",
+            error=str(e),
+            port=settings.db_port,
+        )
+        db_info = None
 
     # Check Supabase client initialization
     supabase = get_supabase_client_safe()

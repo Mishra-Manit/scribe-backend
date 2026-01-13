@@ -10,6 +10,10 @@ from database.utils import (
     check_db_connection,
     get_db_info,
 )
+from database.retry_utils import (
+    retry_on_db_error,
+    retry_on_db_error_async,
+)
 
 __all__ = [
     # Base components
@@ -23,4 +27,7 @@ __all__ = [
     # Utilities
     "check_db_connection",
     "get_db_info",
+    # Retry utilities
+    "retry_on_db_error",
+    "retry_on_db_error_async",
 ]

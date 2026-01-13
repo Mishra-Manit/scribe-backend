@@ -1,74 +1,35 @@
 """
 FastAPI dependency injection for database sessions.
-Provides database session dependencies for API endpoints with retry logic.
+Provides database session dependencies for API endpoints.
 """
 
-import time
 from typing import Generator
 
-import logfire
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import OperationalError
 
-from database.base import SessionLocal, engine
+from database.base import SessionLocal
+from database.retry_utils import retry_on_db_error
 
 
-MAX_RETRIES = 3
-RETRY_DELAY_BASE = 0.5
+@retry_on_db_error
+def _create_db_session() -> Session:
+    """
+    Create and validate a database session.
+    Wrapped with retry logic for transient connection failures.
+    """
+    db = SessionLocal()
+    db.execute(text("SELECT 1"))  # Validate connection
+    return db
 
 
 def get_db() -> Generator[Session, None, None]:
     """
-    FastAPI dependency that provides a database session with retry logic.
-    Implements exponential backoff for transient connection failures.
+    FastAPI dependency that provides a database session.
+    Uses shared retry logic for consistent error handling across the application.
     """
-    last_exception: OperationalError | None = None
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            db = SessionLocal()
-            db.execute(text("SELECT 1"))
-            try:
-                yield db
-                return
-            finally:
-                db.close()
-
-        except OperationalError as e:
-            last_exception = e
-            error_msg = str(e)
-
-            is_retryable = any(
-                keyword in error_msg.lower()
-                for keyword in ["timeout", "connection refused", "could not connect", "connection reset"]
-            )
-
-            if not is_retryable:
-                logfire.error(
-                    "Database error (non-retryable)",
-                    error=error_msg,
-                    attempt=attempt,
-                )
-                raise
-
-            if attempt < MAX_RETRIES:
-                delay = RETRY_DELAY_BASE * (2 ** (attempt - 1))
-                logfire.warning(
-                    "Database connection failed, retrying",
-                    error=error_msg[:200],
-                    attempt=attempt,
-                    max_attempts=MAX_RETRIES,
-                    retry_delay=delay,
-                )
-                engine.dispose()
-                time.sleep(delay)
-            else:
-                logfire.error(
-                    "Database connection failed after all retries",
-                    error=error_msg[:200],
-                    attempts=MAX_RETRIES,
-                )
-
-    if last_exception is not None:
-        raise last_exception
+    db = _create_db_session()
+    try:
+        yield db
+    finally:
+        db.close()

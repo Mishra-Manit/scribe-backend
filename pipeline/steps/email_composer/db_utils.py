@@ -9,9 +9,7 @@ from typing import Optional
 from uuid import UUID
 
 import logfire
-from sqlalchemy.exc import OperationalError
 
-from database.base import engine
 from models.email import Email
 from models.user import User
 from database.session import get_db_context
@@ -36,75 +34,55 @@ async def write_email_to_db(
         is_confident=is_confident
     )
 
-    def _sync_write() -> UUID:
-        """Synchronous database write operation executed in thread pool."""
-        with get_db_context() as db:
-            # Create and add email record
-            email = Email(
-                user_id=user_id,
-                recipient_name=recipient_name,
-                recipient_interest=recipient_interest,
-                email_message=email_content,
-                template_type=template_type,
-                email_metadata=metadata,
-                is_confident=is_confident
-            )
-            db.add(email)
-            db.flush()  # Get the ID before commit
+    async def _async_write() -> UUID:
+        """Async database write operation with thread pool execution."""
 
-            email_id = email.id
-            db.commit()  # Explicit commit
+        def _sync_write() -> UUID:
+            """Synchronous database write operation executed in thread pool."""
+            with get_db_context() as db:
+                # Create and add email record
+                email = Email(
+                    user_id=user_id,
+                    recipient_name=recipient_name,
+                    recipient_interest=recipient_interest,
+                    email_message=email_content,
+                    template_type=template_type,
+                    email_metadata=metadata,
+                    is_confident=is_confident
+                )
+                db.add(email)
+                db.flush()  # Get the ID before commit
 
-            return email_id
+                email_id = email.id
+                db.commit()  # Explicit commit
 
-    max_attempts = 3
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # Run blocking DB operation in thread pool to avoid blocking event loop
-            email_id = await asyncio.to_thread(_sync_write)
+                return email_id
 
-            logfire.info(
-                "Email written to database successfully",
-                email_id=str(email_id),
-                user_id=str(user_id),
-                recipient_name=recipient_name
-            )
+        # Run blocking DB operation in thread pool to avoid blocking event loop
+        email_id = await asyncio.to_thread(_sync_write)
 
-            return email_id
+        logfire.info(
+            "Email written to database successfully",
+            email_id=str(email_id),
+            user_id=str(user_id),
+            recipient_name=recipient_name
+        )
 
-        except OperationalError as e:
-            logfire.warning(
-                "Operational error writing email to database",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=str(user_id),
-                attempt=attempt,
-                max_attempts=max_attempts,
-            )
+        return email_id
 
-            # Dispose pool to force fresh connections on retry
-            engine.dispose()
+    # Use shared retry logic for consistent error handling
+    from database import retry_on_db_error_async
 
-            if attempt < max_attempts:
-                await asyncio.sleep(1.0 * attempt)
-                continue
-
-            logfire.error(
-                "Error writing email to database",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=str(user_id)
-            )
-            return None
-
-        except Exception as e:
-            logfire.error(
-                "Error writing email to database",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=str(user_id)
-            )
-            return None
+    try:
+        return await retry_on_db_error_async(_async_write)
+    except Exception as e:
+        logfire.error(
+            "Error writing email to database after retries",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=str(user_id)
+        )
+        return None
 
 
 async def increment_user_generation_count(user_id: UUID) -> bool:

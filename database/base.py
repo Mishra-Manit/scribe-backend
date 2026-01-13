@@ -20,10 +20,12 @@ def _create_engine():
     - Prevents stale connection accumulation
     - Optimizes for auto-scaling deployments (Render.com)
     - Connections are created per-request and immediately discarded
+    - Connection pre-ping adds safety for Cloudflare tunnel stability
     """
     return create_engine(
         settings.database_url,
         poolclass=NullPool,
+        pool_pre_ping=True,  # Test connection health before use (Cloudflare tunnel safety)
         connect_args={
             "connect_timeout": settings.db_connect_timeout,
             "options": f"-c statement_timeout={settings.db_statement_timeout}",
