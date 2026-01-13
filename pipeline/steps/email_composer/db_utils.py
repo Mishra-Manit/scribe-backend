@@ -27,25 +27,7 @@ async def write_email_to_db(
     metadata: dict,
     is_confident: bool = False
 ) -> Optional[UUID]:
-    """
-    Write composed email to database using thread pool for sync operations.
-
-    This function runs synchronous database operations in a thread pool to prevent
-    blocking the async event loop. Without this, sync DB operations can cause
-    400+ second delays in async contexts.
-
-    Args:
-        user_id: User who generated the email
-        recipient_name: Recipient's name
-        recipient_interest: Recipient's research interest
-        email_content: Final composed email text
-        template_type: Type of template used (RESEARCH, BOOK, GENERAL)
-        metadata: Structured generation metadata (papers, sources, timings)
-        is_confident: Whether sufficient context was available for personalization
-
-    Returns:
-        Email UUID if successful, None if failed
-    """
+    """Write composed email to database using thread pool to avoid blocking async event loop."""
     logfire.info(
         "Writing email to database",
         user_id=str(user_id),
@@ -126,17 +108,7 @@ async def write_email_to_db(
 
 
 async def increment_user_generation_count(user_id: UUID) -> bool:
-    """
-    Increment user's generation count using thread pool for sync operations.
-
-    Optional operation - doesn't fail pipeline if unsuccessful.
-
-    Args:
-        user_id: User UUID
-
-    Returns:
-        True if successful, False otherwise
-    """
+    """Increment user's generation count using thread pool (optional operation, doesn't fail pipeline)."""
     def _sync_increment() -> bool:
         """Synchronous database operation executed in thread pool."""
         with get_db_context() as db:

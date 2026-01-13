@@ -10,11 +10,7 @@ from .utils import search_arxiv
 
 
 class ArxivHelperStep(BasePipelineStep):
-    """
-    Fetch ArXiv papers for RESEARCH templates only.
-
-    Sets: arxiv_papers, enrichment_metadata
-    """
+    """Fetch ArXiv papers for RESEARCH templates only."""
 
     def __init__(self):
         super().__init__(step_name="arxiv_helper")

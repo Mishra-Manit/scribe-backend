@@ -26,22 +26,7 @@ async def create_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate template from resume and user instructions.
-
-    Args:
-        request: Template generation request with pdf_url and instructions
-        current_user: Authenticated user (injected by dependency)
-        db: Database session (injected by dependency)
-
-    Returns:
-        TemplateResponse: Generated template with metadata
-
-    Raises:
-        HTTPException 429: If user has reached 5 template limit
-        HTTPException 400: If PDF parsing fails or generation fails
-        HTTPException 500: If database operation fails
-    """
+    """Generate template from resume PDF and user instructions (max 5 templates per user)."""
     with logfire.span("api.create_template", user_id=str(current_user.id)):
         # Check template generation limit
         if current_user.template_count >= settings.template_generation_limit:
@@ -114,21 +99,7 @@ async def list_templates(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    List user's templates (paginated, newest first).
-
-    Args:
-        pagination: Pagination parameters (limit and offset, injected by dependency)
-        current_user: Authenticated user (injected by dependency)
-        db: Database session (injected by dependency)
-
-    Returns:
-        List[TemplateResponse]: List of user's templates
-
-    Raises:
-        HTTPException 401: If JWT token is invalid
-        HTTPException 403: If user is not initialized
-    """
+    """List user's templates, paginated and sorted by newest first."""
     limit = pagination["limit"]
     offset = pagination["offset"]
 
@@ -153,21 +124,7 @@ async def get_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Get specific template by ID.
-
-    Args:
-        template_id: UUID of the template
-        current_user: Authenticated user (injected by dependency)
-        db: Database session (injected by dependency)
-
-    Returns:
-        TemplateResponse: Template data
-
-    Raises:
-        HTTPException 400: If template_id is not a valid UUID
-        HTTPException 404: If template doesn't exist or user doesn't own it
-    """
+    """Get specific template by ID, verifying user ownership."""
     # Validate UUID format
     try:
         template_uuid = ensure_uuid(template_id)

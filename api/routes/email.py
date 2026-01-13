@@ -30,11 +30,7 @@ async def generate_email(
     request: GenerateEmailRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Enqueue background task to generate personalized email via multi-step pipeline.
-
-    Returns task_id for polling via /status endpoint.
-    """
+    """Enqueue background task to generate personalized email via multi-step pipeline."""
     with logfire.span(
         "api.generate_email",
         user_id=str(current_user.id),
@@ -59,12 +55,7 @@ async def get_task_status(
     task_id: str,
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Check task status from Celery backend.
-
-    Returns PENDING/STARTED/SUCCESS/FAILURE with step info, result, or error.
-    Note: Results expire after 1 hour (see celery_config.py).
-    """
+    """Check Celery task status and return progress, result, or error (results expire after 1 hour)."""
     with logfire.span(
         "api.task_status",
         task_id=task_id,
@@ -118,11 +109,7 @@ async def get_email(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Retrieve generated email by ID. Users can only access their own emails.
-
-    Returns 404 if email doesn't exist or belongs to another user.
-    """
+    """Retrieve generated email by ID, verifying user ownership."""
     # Validate UUID format early
     try:
         email_uuid = ensure_uuid(email_id)
@@ -159,12 +146,7 @@ async def update_email(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Update email properties (currently supports displayed field only).
-
-    Users can only update their own emails. Returns 404 if email doesn't
-    exist or belongs to another user.
-    """
+    """Update email properties (currently supports displayed field only), verifying user ownership."""
     # Validate UUID format early
     try:
         email_uuid = ensure_uuid(email_id)
@@ -216,12 +198,7 @@ async def get_email_history(
         description="Include discarded emails (displayed=false) in results"
     ),
 ):
-    """
-    Get user's email generation history, paginated and ordered by newest first.
-
-    By default, only displayed emails are returned. Set include_discarded=true
-    to see all emails including discarded ones.
-    """
+    """Get user's email generation history, paginated and ordered by newest first."""
     limit = pagination["limit"]
     offset = pagination["offset"]
 
