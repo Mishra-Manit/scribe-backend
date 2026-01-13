@@ -18,6 +18,8 @@ async def generate_template_from_resume(
     """Generate email template from resume PDF using AI with user instructions."""
     with logfire.span("template_generation.generate", pdf_url=pdf_url):
         try:
+            model = settings.template_generator_model
+
             # Extract resume text from PDF
             with logfire.span("template_generation.extract_resume"):
                 logfire.info("Extracting text from PDF", pdf_url=pdf_url)
