@@ -65,6 +65,7 @@ class UserResponse(BaseModel):
     display_name: str | None
     generation_count: int
     template_count: int
+    onboarded: bool
     created_at: datetime
 
     model_config = ConfigDict(
@@ -76,6 +77,7 @@ class UserResponse(BaseModel):
                 "display_name": "John Doe",
                 "generation_count": 5,
                 "template_count": 3,
+                "onboarded": False,
                 "created_at": "2024-01-13T10:30:00Z",
             }
         },

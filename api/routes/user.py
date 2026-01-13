@@ -72,3 +72,15 @@ async def get_user_profile(
     # The dependency already fetched and validated the user
     # If we reach this point, current_user is a valid User model instance
     return current_user
+
+
+@router.patch("/onboarding", response_model=UserResponse)
+async def complete_onboarding(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark the current user as having completed onboarding."""
+    current_user.onboarded = True
+    db.commit()
+    db.refresh(current_user)
+    return current_user
