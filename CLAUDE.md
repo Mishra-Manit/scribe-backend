@@ -150,6 +150,21 @@ Backend (FastAPI)  -> Validate JWT token via Supabase
 - `email_message`: Generated email content
 - `created_at`: Timestamp (indexed)
 
+**Queue Items Table** (models/queue_item.py):
+- `id`: Auto-generated UUID
+- `user_id`: Foreign key to users table (CASCADE delete)
+- `recipient_name`: Recipient name (2-255 chars)
+- `recipient_interest`: Research interest (2-500 chars)
+- `email_template_text`: Template snapshot at submission time
+- `status`: Queue status (PENDING | PROCESSING | COMPLETED | FAILED)
+- `celery_task_id`: Celery task ID for tracking
+- `current_step`: Current pipeline step being executed
+- `email_id`: Foreign key to emails table (nullable, SET NULL on delete)
+- `error_message`: Error details if failed (max 1000 chars, truncated)
+- `started_at`: Timestamp when processing began
+- `completed_at`: Timestamp when processing finished
+- `created_at`: Timestamp (indexed for FIFO ordering)
+
 ### Pipeline Architecture (In Development)
 
 The email generation system uses a multi-step agentic pipeline located in `pipeline/`:
@@ -197,6 +212,29 @@ The email generation system uses a multi-step agentic pipeline located in `pipel
 **GET /api/user/profile** - Get current user profile
 - Headers: `Authorization: Bearer {jwt_token}`
 - Requires user to be initialized first
+
+### Queue Management (`/api/queue`)
+
+**POST /api/queue/batch** - Submit batch of email generation requests (1-100 items)
+- Headers: `Authorization: Bearer {jwt_token}`
+- Body: `BatchSubmitRequest` (items array + email_template)
+- Returns: `BatchSubmitResponse` with queue_item_ids array
+- Inserts queue items in database (status=PENDING)
+- Dispatches Celery tasks for each item
+- Validates max 100 items per batch
+
+**GET /api/queue/** - Get all user's queue items
+- Headers: `Authorization: Bearer {jwt_token}`
+- Returns: Array of `QueueItemResponse` with position calculations
+- Ordered by created_at ASC (FIFO queue)
+- Position calculated using SQL window function (efficient, no N+1)
+
+**DELETE /api/queue/{id}** - Cancel pending queue item
+- Headers: `Authorization: Bearer {jwt_token}`
+- Path: queue_item_id (UUID)
+- Only allows canceling PENDING items (returns 400 for other statuses)
+- Revokes Celery task if present
+- Returns: `CancelQueueItemResponse` confirmation
 
 ### Health & Info
 
@@ -296,6 +334,97 @@ When working with the pipeline system:
 3. Steps communicate via `PipelineData` dataclass
 4. Use structured logging via step logger
 5. Handle errors gracefully and return detailed failure information
+
+### Queue System Development Pattern
+
+When working with the queue system (`api/routes/queue.py` and `tasks/email_tasks.py`):
+
+**Flow**: Batch submission → Database insert → Celery dispatch → Sequential processing (concurrency=1) → Status updates
+
+**Implementation**:
+```python
+from schemas.queue import BatchSubmitRequest, QueueItemResponse
+from api.dependencies import get_current_user
+from tasks.email_tasks import generate_email_task
+from models.queue_item import QueueItem, QueueStatus
+
+@router.post("/api/queue/batch")
+async def submit_batch(
+    request: BatchSubmitRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # 1. Insert queue items in database (status=PENDING)
+    queue_items = []
+    for item in request.items:
+        queue_item = QueueItem(
+            user_id=current_user.id,
+            recipient_name=item.recipient_name,
+            recipient_interest=item.recipient_interest,
+            email_template_text=request.email_template,
+            status=QueueStatus.PENDING
+        )
+        db.add(queue_item)
+        queue_items.append(queue_item)
+
+    db.commit()
+
+    # 2. Dispatch Celery tasks
+    for queue_item in queue_items:
+        task = generate_email_task.apply_async(
+            kwargs={"queue_item_id": str(queue_item.id)}
+        )
+        # Store Celery task ID for fallback tracking
+        queue_item.celery_task_id = task.id
+
+    db.commit()
+
+    return {"queue_item_ids": [str(qi.id) for qi in queue_items]}
+```
+
+**Key Points**:
+- Celery worker runs with `concurrency=1` for sequential processing (prevents API rate limits)
+- Queue items persist in database (survives worker restarts, tab closes)
+- Frontend polls `GET /api/queue/` every 2 seconds for real-time updates
+- Error messages truncated to max 1000 chars to prevent DB bloat
+- Use `update_queue_status()` helper in Celery task for all status changes
+
+**Error Handling**:
+```python
+# In tasks/email_tasks.py
+def update_queue_status(
+    queue_item_id: str,
+    status: str,
+    email_id: str | None = None,
+    error_message: str | None = None,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None
+):
+    """Helper to update queue item status in database."""
+    with SessionLocal() as db:
+        queue_item = db.query(QueueItem).filter(QueueItem.id == queue_item_id).first()
+
+        if not queue_item:
+            logfire.warning(f"Queue item {queue_item_id} not found")
+            return
+
+        queue_item.status = status
+        if email_id:
+            queue_item.email_id = email_id
+        if error_message:
+            queue_item.error_message = error_message[:1000]  # Truncate
+        if started_at:
+            queue_item.started_at = started_at
+        if completed_at:
+            queue_item.completed_at = completed_at
+
+        db.commit()
+```
+
+**Database Queries**:
+- Use optimized position calculation with SQL window functions (no N+1 queries)
+- Filter by user_id for security (users only see their own queue items)
+- Leverage indexes: `ix_queue_items_user_id`, `ix_queue_items_status`, `ix_queue_items_created_at`
 
 ### Writing Tests
 
@@ -407,16 +536,19 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 ```
 /pythonserver
 ├── api/                    # FastAPI routes and dependencies
-│   ├── routes/            # Route handlers (user.py, email.py, template.py)
+│   ├── routes/            # Route handlers (user.py, email.py, template.py, queue.py)
+│   │   └── queue.py       # Queue management endpoints (batch, status, cancel)
 │   └── dependencies.py    # Auth dependencies (JWT validation)
 ├── models/                # SQLAlchemy ORM models
 │   ├── user.py           # User model
 │   ├── email.py          # Email model
-│   └── template.py       # Template model
+│   ├── template.py       # Template model
+│   └── queue_item.py     # Queue item model (PENDING/PROCESSING/COMPLETED/FAILED)
 ├── schemas/               # Pydantic schemas for validation
 │   ├── auth.py           # Authentication schemas
 │   ├── pipeline.py       # Email generation schemas
-│   └── template.py       # Template schemas
+│   ├── template.py       # Template schemas
+│   └── queue.py          # Queue request/response schemas (BatchSubmitRequest, QueueItemResponse)
 ├── database/              # Database configuration and utilities
 │   ├── base.py           # SQLAlchemy Base and engine
 │   ├── session.py        # Session management
@@ -439,7 +571,7 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 │       ├── arxiv_helper/       # Step 3: Fetch academic papers (if RESEARCH)
 │       └── email_composer/     # Step 4: Generate final email and save to DB
 ├── tasks/                 # Celery background tasks
-│   └── email_tasks.py    # Email generation task orchestration
+│   └── email_tasks.py    # Email generation task orchestration (with queue_item_id integration)
 ├── observability/         # Monitoring and logging
 │   └── logfire_config.py # Logfire initialization
 ├── alembic/               # Database migrations

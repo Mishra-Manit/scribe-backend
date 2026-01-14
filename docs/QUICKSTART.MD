@@ -225,15 +225,98 @@ This will be classified as `GENERAL` template type and skip the ArXiv paper enri
 
 ---
 
+### Example 3: Batch Email Generation (Queue System)
+
+**Generate multiple emails at once (1-100 recipients):**
+
+```bash
+curl -X POST http://localhost:8000/api/queue/batch \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "recipient_name": "Dr. Jane Smith",
+        "recipient_interest": "machine learning for healthcare"
+      },
+      {
+        "recipient_name": "Dr. John Doe",
+        "recipient_interest": "computer vision"
+      },
+      {
+        "recipient_name": "Dr. Alice Johnson",
+        "recipient_interest": "natural language processing"
+      }
+    ],
+    "email_template": "Hi {{name}}, I'\''m fascinated by your work on {{research_area}}. Would you be open to a brief call?"
+  }'
+```
+
+**Response:**
+```json
+{
+  "queue_item_ids": [
+    "550e8400-e29b-41d4-a716-446655440000",
+    "660e8400-e29b-41d4-a716-446655440001",
+    "770e8400-e29b-41d4-a716-446655440002"
+  ]
+}
+```
+
+**Monitor queue progress (poll every 2 seconds):**
+
+```bash
+curl http://localhost:8000/api/queue/ \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+**Response showing processing status:**
+```json
+[
+  {
+    "id": "550e8400-...",
+    "status": "COMPLETED",
+    "position": null,
+    "email_id": "email-uuid-1",
+    "started_at": "2025-01-24T10:30:00Z",
+    "completed_at": "2025-01-24T10:30:15Z"
+  },
+  {
+    "id": "660e8400-...",
+    "status": "PROCESSING",
+    "position": 1,
+    "email_id": null,
+    "started_at": "2025-01-24T10:30:16Z",
+    "completed_at": null
+  },
+  {
+    "id": "770e8400-...",
+    "status": "PENDING",
+    "position": 2,
+    "email_id": null,
+    "started_at": null,
+    "completed_at": null
+  }
+]
+```
+
+**Why sequential processing?**
+- Celery worker runs with `concurrency=1` to prevent API rate limits
+- Items processed one at a time in FIFO order
+- Each email takes ~10-15 seconds to generate
+- Frontend polls every 2 seconds for real-time updates
+
+---
+
 ## What Happens Under the Hood?
 
 When you send a generation request, Scribe executes a **4-step pipeline**:
 
 ```
-1. Template Parser  ’ Analyzes your template and extracts search terms
-2. Web Scraper      ’ Finds information about the recipient online
-3. ArXiv Enricher   ’ Fetches relevant research papers (RESEARCH type only)
-4. Email Composer   ’ Generates personalized email with all context
+1. Template Parser  ï¿½ Analyzes your template and extracts search terms
+2. Web Scraper      ï¿½ Finds information about the recipient online
+3. ArXiv Enricher   ï¿½ Fetches relevant research papers (RESEARCH type only)
+4. Email Composer   ï¿½ Generates personalized email with all context
 ```
 
 **Execution time:** 3-5 seconds (varies by template complexity and web scraping)
@@ -272,7 +355,7 @@ celery -A tasks.celery_app inspect active
 
 **For development/testing**, you can disable auth temporarily:
 - Comment out `Depends(get_current_user)` in `api/routes/email.py`
-- **  Remember to re-enable before deploying to production**
+- **ï¿½ Remember to re-enable before deploying to production**
 
 ---
 
@@ -435,4 +518,4 @@ alembic upgrade head  # Apply migrations
 
 *Last updated: 2025-01-24*
 
-**Ready to generate personalized emails at scale! =€**
+**Ready to generate personalized emails at scale! =ï¿½**
