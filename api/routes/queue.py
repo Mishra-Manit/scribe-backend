@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, over
 from typing import List
+from datetime import datetime, timedelta, timezone
 import logfire
 
 from models.user import User
@@ -94,14 +95,18 @@ async def get_queue_items(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get all queue items for the current user with their status and position."""
+    """Get queue items from the last 24 hours for the current user with their status and position."""
     with logfire.span(
         "api.queue_get_items",
         user_id=str(current_user.id)
     ):
+        # Calculate 24-hour cutoff time (only show recent items)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+
         # Get all user's queue items ordered by creation time
         items = db.query(QueueItem).filter(
-            QueueItem.user_id == current_user.id
+            QueueItem.user_id == current_user.id,
+            QueueItem.created_at >= cutoff_time
         ).order_by(QueueItem.created_at.asc()).all()
 
         # Calculate positions for PENDING items in a single query using window function
@@ -113,7 +118,8 @@ async def get_queue_items(
                 order_by=QueueItem.created_at.asc()
             ).label('position')
         ).filter(
-            QueueItem.status == QueueStatus.PENDING
+            QueueItem.status == QueueStatus.PENDING,
+            QueueItem.created_at >= cutoff_time
         ).all()
 
         # Create lookup map: {item_id: position}

@@ -72,7 +72,7 @@ class EmailComposerStep(BasePipelineStep):
             )
 
             logfire.info(
-                "Generating email with Anthropic",
+                "Generating email with LLM",
                 model=self.model,
                 temperature=self.temperature,
                 recipient_name=pipeline_data.recipient_name
