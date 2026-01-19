@@ -162,7 +162,7 @@ def main():
         print("  1. Install dependencies: pip install -r requirements.txt")
         print("  2. Start Redis: brew services start redis (macOS)")
         print("  3. Update .env with actual API keys")
-        print("  4. Start Celery worker: celery -A celery_config.celery_app worker --loglevel=info")
+        print("  4. Start Celery worker: celery -A celery_config.celery_app worker --loglevel=info --queues=email_default --concurrency=1")
         return 0
     else:
         print(f"✗ {failures} test(s) failed. Please fix errors above.")

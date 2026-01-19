@@ -13,10 +13,12 @@ Scribe is a production-ready cold email platform built with FastAPI that uses a 
 ## ✨ Features
 
 - **Multi-Step Agentic Pipeline**: Template parsing → Web scraping → Academic enrichment → Email composition
+- **Database-Backed Queue**: Submit up to 100 email recipients at once with sequential processing (Celery concurrency=1)
+- **Real-Time Status Updates**: Poll queue status with position tracking and live progress indicators
 - **Template Types**: Research (with ArXiv papers), Book (published works), General (professional info)
 - **Smart Web Scraping**: Playwright-powered headless browser with JavaScript support
 - **ArXiv Integration**: Automatic academic paper discovery and citation
-- **Async Task Processing**: Celery-based job queue with real-time status updates
+- **Async Task Processing**: Celery-based job queue with persistent database state
 - **Comprehensive Observability**: Logfire integration with LLM call tracking (cost, tokens, latency)
 - **Anti-Hallucination Design**: Multi-source verification, uncertainty markers, chain-of-thought reasoning
 - **Type-Safe**: Pydantic models throughout with structured LLM outputs via pydantic-ai
@@ -128,7 +130,7 @@ alembic revision --autogenerate -m "Description"
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # Terminal 2: Start Celery worker
-celery -A celery_config.celery_app worker --loglevel=info --pool=solo
+celery -A celery_config.celery_app worker --loglevel=info --queues=email_default --concurrency=1
 
 # Terminal 3: (Optional) Start Flower monitoring
 celery -A celery_config.celery_app flower
@@ -148,10 +150,13 @@ celery -A celery_config.celery_app flower
 |----------|--------|---------|------|
 | `/api/user/init` | POST | Initialize user profile | Required |
 | `/api/user/profile` | GET | Get current user | Required |
-| `/api/email/generate` | POST | Generate email (async) | Required |
+| `/api/email/generate` | POST | Generate single email (async) | Required |
 | `/api/email/status/{task_id}` | GET | Check generation status | Required |
 | `/api/email/{email_id}` | GET | Retrieve email by ID | Required |
 | `/api/email/` | GET | List user's emails | Required |
+| `/api/queue/batch` | POST | Submit batch (1-100 recipients) | Required |
+| `/api/queue/` | GET | Get all user's queue items | Required |
+| `/api/queue/{id}` | DELETE | Cancel pending queue item | Required |
 | `/health` | GET | Health check | Public |
 
 ### Example: Generate Email
@@ -178,6 +183,39 @@ curl http://localhost:8000/api/email/status/abc-123 \
 
 # 3. Retrieve email
 curl http://localhost:8000/api/email/550e8400-... \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+### Example: Batch Generate Emails
+
+```bash
+# 1. Submit batch (1-100 recipients)
+curl -X POST http://localhost:8000/api/queue/batch \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {"recipient_name": "Dr. Jane Smith", "recipient_interest": "machine learning"},
+      {"recipient_name": "Dr. John Doe", "recipient_interest": "computer vision"},
+      {"recipient_name": "Dr. Alice Johnson", "recipient_interest": "NLP"}
+    ],
+    "email_template": "Hi {{name}}, I love your work on {{research}}!"
+  }'
+
+# Response: {"queue_item_ids": ["uuid-1", "uuid-2", "uuid-3"]}
+
+# 2. Poll queue status (every 2 seconds)
+curl http://localhost:8000/api/queue/ \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Response: [
+#   {"id": "uuid-1", "status": "COMPLETED", "email_id": "email-uuid-1", "position": null},
+#   {"id": "uuid-2", "status": "PROCESSING", "email_id": null, "position": 1},
+#   {"id": "uuid-3", "status": "PENDING", "email_id": null, "position": 2}
+# ]
+
+# 3. Cancel pending item (only PENDING status can be canceled)
+curl -X DELETE http://localhost:8000/api/queue/uuid-3 \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -299,7 +337,7 @@ alembic downgrade -1                      # Rollback one migration
 uvicorn main:app --reload                 # Hot reload enabled
 
 # Celery worker
-celery -A celery_config.celery_app worker --loglevel=info --pool=solo
+celery -A celery_config.celery_app worker --loglevel=info --queues=email_default --concurrency=1
 
 # Celery monitoring
 celery -A celery_config.celery_app flower
@@ -408,6 +446,31 @@ emails (
 )
 ```
 
+### Queue Items Table
+```sql
+queue_items (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  recipient_name VARCHAR(255) NOT NULL,
+  recipient_interest VARCHAR(500) NOT NULL,
+  email_template_text TEXT NOT NULL,
+  status VARCHAR(50) NOT NULL,      -- PENDING, PROCESSING, COMPLETED, FAILED
+  celery_task_id VARCHAR(255),
+  current_step VARCHAR(100),
+  email_id UUID REFERENCES emails(id) ON DELETE SET NULL,
+  error_message TEXT,
+  started_at TIMESTAMP,
+  completed_at TIMESTAMP,
+  created_at TIMESTAMP
+)
+
+-- Indexes for efficient queries
+CREATE INDEX ix_queue_items_user_id ON queue_items(user_id);
+CREATE INDEX ix_queue_items_status ON queue_items(status);
+CREATE INDEX ix_queue_items_created_at ON queue_items(created_at);
+CREATE INDEX ix_queue_items_user_status ON queue_items(user_id, status);
+```
+
 **Metadata JSONB Structure:**
 ```json
 {
@@ -440,5 +503,3 @@ Contributions welcome! Please follow existing code patterns:
 For detailed architecture documentation, see [CLAUDE.md](./CLAUDE.md).
 
 ---
-
-**Built with ❤️ using FastAPI, Anthropic Claude, and modern Python tooling**

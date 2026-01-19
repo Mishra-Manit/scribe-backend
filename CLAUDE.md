@@ -156,7 +156,7 @@ Backend (FastAPI)  -> Validate JWT token via Supabase
 - `recipient_name`: Recipient name (2-255 chars)
 - `recipient_interest`: Research interest (2-500 chars)
 - `email_template_text`: Template snapshot at submission time
-- `status`: Queue status (PENDING | PROCESSING | COMPLETED | FAILED)
+- `status`: Queue status enum (`QueueStatus.PENDING | PROCESSING | COMPLETED | FAILED`)
 - `celery_task_id`: Celery task ID for tracking
 - `current_step`: Current pipeline step being executed
 - `email_id`: Foreign key to emails table (nullable, SET NULL on delete)
@@ -164,6 +164,18 @@ Backend (FastAPI)  -> Validate JWT token via Supabase
 - `started_at`: Timestamp when processing began
 - `completed_at`: Timestamp when processing finished
 - `created_at`: Timestamp (indexed for FIFO ordering)
+
+**Queue Status Enum** (models/queue_item.py):
+```python
+class QueueStatus(str, Enum):
+    PENDING = "pending"     # Waiting in queue
+    PROCESSING = "processing"  # Currently being processed
+    COMPLETED = "completed"    # Successfully finished
+    FAILED = "failed"          # Encountered error
+```
+- Inherits from both `str` and `Enum` for type safety and JSON serialization
+- Use `QueueStatus.PENDING` instead of string literals `"pending"`
+- Comparisons work naturally: `item.status == QueueStatus.PENDING`
 
 ### Pipeline Architecture (In Development)
 
