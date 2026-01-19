@@ -22,11 +22,12 @@ class EmailComposerStep(BasePipelineStep):
 
         # Configuration (hot-swappable via environment variable)
         self.model = settings.email_composer_model
-        self.temperature = 0.7
+        # Temperature optimized for Deepseek V3P2: 0.3-0.5 for consistent, confident outputs
+        self.temperature = 0.4
         self.max_tokens = 2000
 
         # Create pydantic-ai agent for email composition
-        # Using Sonnet for high-quality, creative email writing
+        # Optimized for Deepseek V3P2's literal interpretation and structured output strengths
         self.composition_agent = create_agent(
             model=self.model,
             system_prompt=SYSTEM_PROMPT,
