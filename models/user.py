@@ -89,6 +89,13 @@ class User(Base):
         lazy="dynamic"
     )
 
+    queue_items = relationship(
+        "QueueItem",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="dynamic"
+    )
+
     # Indexes
     __table_args__ = (
         Index('ix_users_created_at', 'created_at'),

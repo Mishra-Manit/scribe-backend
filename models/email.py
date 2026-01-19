@@ -103,6 +103,12 @@ class Email(Base):
         back_populates="emails"
     )
 
+    queue_item = relationship(
+        "QueueItem",
+        back_populates="email",
+        uselist=False
+    )
+
     # Indexes for efficient queries
     __table_args__ = (
         Index('ix_emails_user_id', 'user_id'),
