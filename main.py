@@ -6,15 +6,16 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import logfire
 
 from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
 from observability.logfire_config import LogfireConfig
-from api.routes import user_router, email_router, template_router
+from api.routes import user_router, email_router, template_router, queue_router
 
 
 @asynccontextmanager
@@ -221,6 +222,9 @@ app.include_router(email_router)
 
 # Template generation endpoints (authentication required, synchronous)
 app.include_router(template_router)
+
+# Queue management endpoints (authentication required)
+app.include_router(queue_router)
 
 
 if __name__ == "__main__":
