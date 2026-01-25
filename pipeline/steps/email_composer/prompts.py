@@ -124,6 +124,7 @@ def create_composition_prompt(
             arxiv_section += f"\n{i}. Title: {paper['title']}\n"
             arxiv_section += f"   Authors: {', '.join(paper['authors'][:3])}\n"
             arxiv_section += f"   Year: {paper['year']}\n"
+            arxiv_section += f"   Abstract: {paper['abstract']}\n"
 
     # Build prompt with XML structure
     prompt = f"""<task>

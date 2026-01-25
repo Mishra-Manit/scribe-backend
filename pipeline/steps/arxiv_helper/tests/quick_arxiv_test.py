@@ -8,12 +8,13 @@ Usage:
     python pipeline/steps/arxiv_helper/tests/quick_arxiv_test.py
 """
 
+import asyncio
 import os
 import sys
 from pathlib import Path
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root = Path(__file__).parent.parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from pipeline.steps.arxiv_helper.utils import search_arxiv
@@ -47,7 +48,7 @@ def print_papers(author_name: str, papers: list, max_results: int):
         print()
 
 
-def main():
+async def main():
     """Run ArXiv queries and display results."""
 
     # Initialize Logfire for observability (optional but recommended)
@@ -63,11 +64,7 @@ def main():
     # MODIFY THIS LIST TO TEST DIFFERENT QUERIES
     # ========================================================================
     QUERIES = [
-        "Geoffrey Hinton",           # AI pioneer
-        "Yann LeCun",                # Deep learning expert
-        "Andrew Ng",                 # ML educator
-        # Add your own queries here:
-        # "Your Author Name",
+        "Daniel Kasen"
     ]
 
     # Max papers to fetch per query
@@ -88,7 +85,7 @@ def main():
 
     # Run each query
     for query in QUERIES:
-        papers = search_arxiv(
+        papers = await search_arxiv(
             author_name=query,
             max_results=MAX_RESULTS,
             sort_by=SORT_BY
@@ -101,4 +98,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

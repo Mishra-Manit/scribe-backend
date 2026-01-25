@@ -10,10 +10,40 @@ import logfire
 from typing import List
 
 from .models import ArxivPaper
+from datetime import datetime
 
 # ArXiv search timeout configuration (in seconds)
 ARXIV_SEARCH_TIMEOUT = 30
 
+# Year recency filtering configuration
+INITIAL_FETCH_COUNT = 15        # Fetch more papers for filtering
+MIN_YEAR_THRESHOLD = 10          # Only include papers from last 10 years
+MAX_FINAL_RESULTS = 5           # Return top 5 after filtering
+
+
+def _filter_recent_papers(papers: List[ArxivPaper]) -> List[ArxivPaper]:
+    """
+    Filter papers to only include those from the last N years.
+    """
+    current_year = datetime.now().year
+    cutoff_year = current_year - MIN_YEAR_THRESHOLD
+
+    # Filter papers by year threshold
+    recent_papers = [
+        paper for paper in papers
+        if paper.year >= cutoff_year
+    ]
+
+    logfire.info(
+        "Filtered papers by recency",
+        total_fetched=len(papers),
+        after_filtering=len(recent_papers),
+        cutoff_year=cutoff_year,
+        years_included=[p.year for p in recent_papers[:5]]
+    )
+
+    # Return top 5 after filtering
+    return recent_papers[:MAX_FINAL_RESULTS]
 
 def _search_arxiv_sync(
     author_name: str,
@@ -66,7 +96,9 @@ def _search_arxiv_sync(
 
             papers.append(paper)
 
-        return papers
+        # Filter to recent papers (last 7 years) and limit to top 5
+        filtered_papers = _filter_recent_papers(papers)
+        return filtered_papers
 
     except Exception as e:
         logfire.error(
@@ -80,7 +112,7 @@ def _search_arxiv_sync(
 
 async def search_arxiv(
     author_name: str,
-    max_results: int = 5,
+    max_results: int = INITIAL_FETCH_COUNT,  # Fetch 15 for filtering
     sort_by: arxiv.SortCriterion = arxiv.SortCriterion.Relevance,
     timeout: int = ARXIV_SEARCH_TIMEOUT
 ) -> List[ArxivPaper]:
@@ -118,8 +150,9 @@ async def search_arxiv(
         )
 
         logfire.info(
-            "ArXiv search completed successfully",
-            papers_found=len(papers),
+            "ArXiv search completed successfully (after filtering)",
+            papers_returned=len(papers),
+            paper_years=[p.year for p in papers] if papers else [],
             paper_titles=[p.title for p in papers[:3]] if papers else []
         )
 

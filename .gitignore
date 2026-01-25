@@ -47,3 +47,6 @@ logs/
 # Ignore OS files
 .DS_Store
 Thumbs.db 
+
+# Ignore local files
+local/
