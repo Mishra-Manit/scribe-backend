@@ -24,26 +24,43 @@ PUBLICATIONS_QUERIES = {
     TemplateType.RESEARCH: """
 Find ONLY recent research publications by Professor {recipient_name} in {recipient_interest}.
 
-Focus on: recent papers (last 3-5 years), specific titles and venues, key findings,
-collaborators, research methodologies.
+Return ONLY publication titles when you are absolutely certain {recipient_name}
+is listed as an author in the publication's author list.
+If the author's name is not explicitly shown in the author list, omit the title.
+Be extremely strict: it is better to leave out a title than include an uncertain one.
 
-DO NOT include biographical information.
+Focus on: recent papers (last 3-5 years), specific titles and venues.
+If you cannot verify any titles, respond with: No verified publications found.
+
+DO NOT include biographical information or any titles you cannot verify.
 """,
     TemplateType.BOOK: """
 Find ONLY books and major publications by Professor {recipient_name} in {recipient_interest}.
 
-Focus on: books authored or edited, specific titles and publishers, textbooks,
-book chapters, key themes.
+Return ONLY publication titles when you are absolutely certain {recipient_name}
+is listed as an author or editor in the publication's author list.
+If the author's name is not explicitly shown in the author list, omit the title.
+Be extremely strict: it is better to leave out a title than include an uncertain one.
 
-DO NOT include biographical information.
+Focus on: books authored or edited, specific titles and publishers, textbooks,
+book chapters.
+If you cannot verify any titles, respond with: No verified publications found.
+
+DO NOT include biographical information or any titles you cannot verify.
 """,
     TemplateType.GENERAL: """
 Find notable publications by Professor {recipient_name} in {recipient_interest}.
 
-Focus on: most cited publications, recent papers/books (last 3-5 years),
-specific titles and venues, key contributions.
+Return ONLY publication titles when you are absolutely certain {recipient_name}
+is listed as an author in the publication's author list.
+If the author's name is not explicitly shown in the author list, omit the title.
+Be extremely strict: it is better to leave out a title than include an uncertain one.
 
-DO NOT include biographical information.
+Focus on: most cited publications, recent papers/books (last 3-5 years),
+specific titles and venues.
+If you cannot verify any titles, respond with: No verified publications found.
+
+DO NOT include biographical information or any titles you cannot verify.
 """
 }
 

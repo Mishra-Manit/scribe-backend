@@ -75,6 +75,9 @@ Match these elements from the template:
 
 <critical_requirements>
 - Include specific publication titles when available
+- Publication source priority: use ARXIV PAPERS first
+- Only use WEB RESEARCH DATA for publications if ARXIV PAPERS are not available
+- If ARXIV PAPERS are present, do NOT use publication titles from WEB RESEARCH DATA
 - Make all references sound natural and conversational
 - NEVER leave placeholders unfilled
 - Replace with actual content that flows seamlessly
@@ -160,24 +163,27 @@ Before writing, study the template's writing style:
 4. Match the template's: tone, energy, formality, sentence length, vocabulary
 5. PRESERVE ALL paragraph breaks and formatting exactly
 6. Include specific publication titles when available (introduce them naturally)
-7. Write how a real person would email, not how AI thinks they should
+7. Publication source priority: use ARXIV PAPERS first; only use WEB RESEARCH DATA if ARXIV PAPERS are not available
+8. If ARXIV PAPERS are present, do NOT use publication titles from WEB RESEARCH DATA
+9. Write how a real person would email, not how AI thinks they should
 </instructions>
 
 <ai_detector_checklist>
 Before finalizing, verify your output does NOT contain:
-❌ Em dashes (—) - use hyphens (-) or commas
-❌ Semicolons (;) - use periods or commas
-❌ Words: delve, leverage, utilize, harness, facilitate
-❌ Words: transformative, groundbreaking, cutting-edge, innovative, robust
-❌ Phrases: "I hope this email finds you well", "I am reaching out to"
-❌ Perfect grammar if template is casual
-❌ Overly long sentences (3+ clauses) if template is punchy
-❌ Any unfilled placeholders ({{{{variable}}}} or [bracket])
+- Em dashes (unicode em dash character) - use hyphens (-) or commas
+- Semicolons (;) - use periods or commas
+- Words: delve, leverage, utilize, harness, facilitate
+- Words: transformative, groundbreaking, cutting-edge, innovative, robust
+- Phrases: "I hope this email finds you well", "I am reaching out to"
+- Perfect grammar if template is casual
+- Overly long sentences (3+ clauses) if template is punchy
+- Any unfilled placeholders ({{{{variable}}}} or [bracket])
 
-✓ Natural, conversational flow that matches the template
-✓ Specific facts from research data woven in naturally
-✓ Consistent energy level throughout
-✓ Sounds like a real person wrote it
+Also ensure:
+- Natural, conversational flow that matches the template
+- Specific facts from research data woven in naturally
+- Consistent energy level throughout
+- Sounds like a real person wrote it
 </ai_detector_checklist>
 
 <reminder>
