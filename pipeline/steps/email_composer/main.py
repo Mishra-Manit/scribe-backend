@@ -24,7 +24,7 @@ class EmailComposerStep(BasePipelineStep):
         self.model = settings.email_composer_model
         # Temperature optimized for Kimi K2p5: 0.3-0.5 for consistent, confident outputs
         self.temperature = 0.4
-        self.max_tokens = 2000
+        self.max_tokens = 10000
 
         # Create pydantic-ai agent for email composition
         # Optimized for Kimi K2p5's literal interpretation and structured output strengths
