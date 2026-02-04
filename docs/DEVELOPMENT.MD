@@ -51,8 +51,8 @@ CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
 
 # LLM Models (hot-swappable)
-TEMPLATE_PARSER_MODEL=fireworks:accounts/fireworks/models/kimi-k2p5
-EMAIL_COMPOSER_MODEL=fireworks:accounts/fireworks/models/kimi-k2p5
+TEMPLATE_PARSER_MODEL=fireworks:deepseek-v3.2
+EMAIL_COMPOSER_MODEL=fireworks:deepseek-v3.2
 
 # Optional: Logfire
 LOGFIRE_TOKEN=your_token

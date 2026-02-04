@@ -55,20 +55,20 @@ class Settings(BaseSettings):
     exa_api_key: str = Field(default="", description="Exa API key for web search")
 
     # Optional API keys for alternative LLM providers
-    fireworks_api_key: str = Field(default="", description="Fireworks AI API key (optional, for Kimi K2p5 and other models)")
+    fireworks_api_key: str = Field(default="", description="Fireworks AI API key (optional, for DeepSeek v3.2 and other models)")
 
     # LLM Model Configuration (hot-swappable via environment variables)
     template_parser_model: str = Field(
         #default="anthropic:claude-haiku-4-5",
-        default="fireworks:accounts/fireworks/models/kimi-k2p5",
+        default="fireworks:accounts/fireworks/models/deepseek-v3p2",
     )
     email_composer_model: str = Field(
         #default="anthropic:claude-sonnet-4-5",
-        default="fireworks:accounts/fireworks/models/kimi-k2p5",
+        default="fireworks:accounts/fireworks/models/deepseek-v3p2",
     )
     template_generator_model: str = Field(
         #default="anthropic:claude-haiku-4-5",
-        default="fireworks:accounts/fireworks/models/kimi-k2p5",
+        default="fireworks:accounts/fireworks/models/deepseek-v3p2",
     )
 
     # Logging
