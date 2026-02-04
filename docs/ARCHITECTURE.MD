@@ -30,7 +30,7 @@ graph TB
 - **Backend**: FastAPI (Python 3.13), SQLAlchemy, Alembic
 - **Task Queue**: Celery 5.3+ with Redis
 - **Database**: PostgreSQL via Supabase transaction pooler (port 6543)
-- **AI**: Anthropic Claude, Fireworks AI (DeepSeek v3.2 - hot-swappable)
+- **AI**: Anthropic Claude, Fireworks AI (Kimi K2p5 - hot-swappable)
 - **Web Search**: Exa Search API
 - **Auth**: Supabase Auth (JWT validation only)
 - **Observability**: Logfire (distributed tracing, LLM monitoring)
@@ -47,7 +47,7 @@ graph TB
 - Superior instruction-following for structured output
 - Claude Haiku 4.5: Fast extraction tasks
 - Claude Sonnet 4.5: High-quality creative writing
-- Fireworks DeepSeek v3.2: Cost-effective alternative (hot-swappable via env vars)
+- Fireworks Kimi K2p5: Cost-effective alternative (hot-swappable via env vars)
 
 **Why Exa Search?**
 - Modern dual-query strategy (background + publications)
@@ -100,7 +100,7 @@ Backend → Validate JWT → Extract user_id → Lookup local DB → Proceed
 Each step enriches a shared `PipelineData` object. Only the final email is persisted to database.
 
 ### Step 1: Template Parser
-**What**: Analyzes template using Claude/DeepSeek
+**What**: Analyzes template using Claude/Kimi
 **Input**: Template text, recipient info
 **Output**: `search_terms` (list), `template_type` (RESEARCH/BOOK/GENERAL)
 **Example**: `"{{name}}'s work on {{research}}"` → `["Jane Smith machine learning", "Jane Smith publications"]`
@@ -121,7 +121,7 @@ Each step enriches a shared `PipelineData` object. Only the final email is persi
 
 ### Step 4: Email Composer
 **What**: Generates final email + writes to DB
-**Process**: Combines all data → Claude Sonnet/DeepSeek → DB insert
+**Process**: Combines all data → Claude Sonnet/Kimi → DB insert
 **Output**: `final_email`, `email_id` (UUID)
 **Database Ops**:
 - Insert into `emails` table
@@ -295,8 +295,8 @@ created_at          DateTime (indexed for FIFO)
 
 **Implementation**: Environment variables control model selection
 **Current Defaults**:
-- Template Parser: `fireworks:deepseek-v3.2`
-- Email Composer: `fireworks:deepseek-v3.2`
+- Template Parser: `fireworks:accounts/fireworks/models/kimi-k2p5`
+- Email Composer: `fireworks:accounts/fireworks/models/kimi-k2p5`
 **Benefit**: Switch providers without code changes (cost optimization)
 
 ---
@@ -343,8 +343,8 @@ CELERY_RESULT_BACKEND=redis://red-xxx.render.com:6379/1
 ANTHROPIC_API_KEY, FIREWORKS_API_KEY, EXA_API_KEY
 
 # LLM Models (hot-swappable)
-TEMPLATE_PARSER_MODEL=fireworks:deepseek-v3.2
-EMAIL_COMPOSER_MODEL=fireworks:deepseek-v3.2
+TEMPLATE_PARSER_MODEL=fireworks:accounts/fireworks/models/kimi-k2p5
+EMAIL_COMPOSER_MODEL=fireworks:accounts/fireworks/models/kimi-k2p5
 
 # Observability
 LOGFIRE_TOKEN
