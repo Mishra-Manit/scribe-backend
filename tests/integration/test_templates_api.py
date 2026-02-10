@@ -24,7 +24,7 @@ from typing import Dict, Any, List, Optional
 import requests
 
 # Configuration
-API_BASE_URL = os.getenv("API_BASE_URL", "https://scribeserver.onrender.com")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://scribeapi.manitmishra.com")
 JWT_TOKEN = os.getenv("JWT_TOKEN", "")
 
 # ANSI color codes for pretty output

@@ -1,4 +1,12 @@
 # render.yaml
+#
+# LEGACY: This file is no longer used for deployment.
+# The backend has been migrated from Render.com to a self-hosted Raspberry Pi
+# with a Cloudflare Tunnel (https://scribeapi.manitmishra.com).
+# This file is kept for reference only.
+#
+# See docs/ARCHITECTURE.MD for current deployment details.
+#
 services:
   # ----------------- API -----------------
   - type: web

@@ -282,14 +282,14 @@ created_at          DateTime (indexed for FIFO)
 
 **Why**: Supabase's Supavisor handles connection pooling server-side
 **How**: NullPool (no client-side pooling) creates fresh connections per request
-**Benefit**: Eliminates stale connections, optimal for auto-scaling (Render.com)
+**Benefit**: Eliminates stale connections, optimal for single-server deployments (Raspberry Pi)
 
 ### 4. Memory-Constrained Design
 
-**Context**: Render free tier = 512MB RAM
+**Context**: Raspberry Pi has limited RAM (~1-4GB depending on model)
 **Solution**: Sequential processing (`concurrency=1`), single worker
 **Measurement**: Each task ~400MB with Playwright browser
-**Future**: Upgrade to 1GB+ → increase concurrency to 2-4
+**Future**: With sufficient RAM → increase concurrency to 2-4
 
 ### 5. Hot-Swappable LLM Models
 
@@ -301,26 +301,35 @@ created_at          DateTime (indexed for FIFO)
 
 ---
 
-## Deployment (Render.com)
+## Deployment (Raspberry Pi + Cloudflare Tunnel)
 
-### Three-Service Architecture
+### Self-Hosted Architecture
 
-1. **Web Service** (FastAPI) - 512MB RAM, handles HTTP requests
-2. **Worker Service** (Celery) - 512MB RAM, processes background tasks
-3. **Redis** (managed) - Broker + result backend
+The backend runs on a physical Raspberry Pi with traffic routed through a Cloudflare Tunnel, providing a persistent, always-on server without cloud hosting costs.
+
+1. **FastAPI Server** - Handles HTTP requests, exposed via Cloudflare Tunnel at `scribeapi.manitmishra.com`
+2. **Celery Worker** - Processes background email generation tasks
+3. **Redis** - Local instance serving as Celery broker + result backend
+
+### Cloudflare Tunnel Setup
+
+Cloudflare Tunnel creates a secure outbound-only connection from the Raspberry Pi to Cloudflare's network, eliminating the need for port forwarding or a static IP.
+
+- **Public URL**: `https://scribeapi.manitmishra.com`
+- **Tunnel**: Routes traffic from Cloudflare edge → Raspberry Pi → FastAPI (port 8000)
+- **SSL/TLS**: Handled by Cloudflare (automatic HTTPS)
+- **DDoS Protection**: Provided by Cloudflare's network
 
 ### Key Configuration
 
-**Web Service**:
-```yaml
-buildCommand: ./build.sh
-startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 180
+**FastAPI Server**:
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 180
 ```
 
-**Worker Service**:
-```yaml
-buildCommand: pip install -r requirements.txt
-startCommand: celery -A celery_config.celery_app worker -Q email_default,celery --loglevel=info
+**Celery Worker**:
+```bash
+celery -A celery_config.celery_app worker -Q email_default,celery --loglevel=info --concurrency=1
 ```
 
 **Build Script** (`build.sh`):
@@ -335,9 +344,9 @@ python -m playwright install chromium  # ~300MB, cached
 # Database
 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
-# Redis
-CELERY_BROKER_URL=redis://red-xxx.render.com:6379/0
-CELERY_RESULT_BACKEND=redis://red-xxx.render.com:6379/1
+# Redis (local)
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
 
 # APIs
 ANTHROPIC_API_KEY, FIREWORKS_API_KEY, EXA_API_KEY
@@ -350,27 +359,32 @@ EMAIL_COMPOSER_MODEL=fireworks:accounts/fireworks/models/kimi-k2p5
 LOGFIRE_TOKEN
 ```
 
-### Resource Limits (Free Tier)
-
-| Resource | Web | Worker | Total |
-|----------|-----|--------|-------|
-| RAM | 512MB | 512MB | 1GB |
-| CPU | 0.1 | 0.1 | 0.2 |
-| Disk | 512MB | 512MB | 1GB |
+### Resource Considerations (Raspberry Pi)
 
 **Memory Breakdown** (per worker):
 - Python + FastAPI: ~80MB
 - Playwright Chromium: ~150MB (when active)
 - Pipeline overhead: ~50MB
-- Buffer: ~232MB
+- Redis: ~30MB
 
 ### Scaling Strategy
 
-| Plan | RAM | Concurrency | Throughput |
-|------|-----|-------------|------------|
-| Free | 512MB | 1 task | ~6 emails/min |
-| Starter | 1GB | 2 tasks | ~12 emails/min |
-| Standard | 2GB | 4 tasks | ~24 emails/min |
+**Current hardware**: Raspberry Pi 3B+
+- SoC: Broadcom BCM2837B0, quad-core Cortex-A53 (ARMv8) 64-bit @ 1.4GHz
+- RAM: 1GB LPDDR2 SDRAM
+- Networking: Gigabit Ethernet (max ~300Mb/s via USB 2.0), dual-band 802.11ac Wi-Fi
+- Storage: Micro-SD
+
+Running `concurrency=1` — the only viable option with 1GB RAM. Estimated ~560-660MB
+used by OS + FastAPI + Redis + Celery + Playwright, leaving ~340-440MB headroom.
+The workload is mostly I/O-bound (LLM API calls, network), so the modest CPU is adequate.
+
+| Pi Model | RAM | Concurrency | Throughput |
+|----------|-----|-------------|------------|
+| **Pi 3B+ (current)** | **1GB** | **1 task** | **~3-4 emails/min** |
+| Pi 4 (2GB) | 2GB | 1 task | ~6 emails/min |
+| Pi 4 (4GB) | 4GB | 2 tasks | ~12 emails/min |
+| Pi 5 (8GB) | 8GB | 4 tasks | ~24 emails/min |
 
 ---
 

@@ -613,11 +613,11 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 - Supabase's transaction pooler (Supavisor) handles connection pooling server-side
 - NullPool creates fresh connections per request, immediately discarded after use
 - Eliminates stale connection issues common with QueuePool + transaction pooler
-- Optimal for auto-scaling deployments on Render.com
+- Optimal for persistent single-server deployments (Raspberry Pi)
 
 **Port Configuration:**
-- `6543`: Transaction pooler (recommended for Render.com)
-- `5432`: Session pooler or direct connection (not recommended for auto-scaling)
+- `6543`: Transaction pooler (recommended for production)
+- `5432`: Session pooler or direct connection (not recommended for pooled setups)
 
 **Architecture:**
 - Direct PostgreSQL connection to Supabase (not Supabase SDK for queries)
@@ -708,7 +708,7 @@ pytest pipeline/steps/template_parser/test_template_parser.py
 **Comprehensive guides available in the `docs/` folder:**
 
 - **[QUICKSTART.MD](docs/QUICKSTART.MD)** - Get Scribe running in 5 minutes with step-by-step setup
-- **[ARCHITECTURE.MD](docs/ARCHITECTURE.MD)** - System design, technology stack, deployment (Render.com), and observability
+- **[ARCHITECTURE.MD](docs/ARCHITECTURE.MD)** - System design, technology stack, deployment (Raspberry Pi + Cloudflare Tunnel), and observability
 - **[PIPELINE.MD](docs/PIPELINE.MD)** - Deep dive into the 4-step email generation pipeline with implementation details
 - **[DEVELOPMENT.MD](docs/DEVELOPMENT.MD)** - Developer workflows, testing strategies, debugging techniques, and code patterns
 - **[API_REFERENCE.MD](docs/API_REFERENCE.MD)** - Complete REST API documentation with authentication, endpoints, and examples

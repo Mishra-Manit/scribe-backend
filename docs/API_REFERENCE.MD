@@ -6,7 +6,7 @@
 
 ## Overview
 
-**Base URL**: `http://localhost:8000` (dev) | `https://scribe-api.onrender.com` (prod)
+**Base URL**: `http://localhost:8000` (dev) | `https://scribeapi.manitmishra.com` (prod)
 **Interactive Docs**: http://localhost:8000/docs
 
 **Core Features**:

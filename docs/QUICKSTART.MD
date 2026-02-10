@@ -508,11 +508,12 @@ alembic upgrade head  # Apply migrations
 
 ## Production Deployment
 
-**For production deployment to Render.com:**
-- See [ARCHITECTURE.MD - Deployment Section](ARCHITECTURE.MD#deployment)
-- Configure environment variables in Render dashboard
-- Ensure Redis instance is provisioned
-- Scale workers based on load
+**The production backend is self-hosted on a Raspberry Pi with a Cloudflare Tunnel:**
+- See [ARCHITECTURE.MD - Deployment Section](ARCHITECTURE.MD#deployment-raspberry-pi--cloudflare-tunnel)
+- Public URL: `https://scribeapi.manitmishra.com`
+- Cloudflare Tunnel handles SSL/TLS and DDoS protection
+- Redis runs locally on the Pi
+- Celery worker runs with `concurrency=1` for memory efficiency
 
 ---
 

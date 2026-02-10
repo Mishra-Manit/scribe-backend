@@ -257,7 +257,7 @@ Total: ~10.4s
 - **Structured Outputs**: All LLM responses validated against Pydantic models
 - **Real-Time Updates**: Progress callbacks update Celery task state
 - **Comprehensive Metadata**: JSONB storage of search terms, URLs, papers, timings
-- **Memory Optimized**: Sequential browser usage for 512MB environments
+- **Memory Optimized**: Sequential browser usage for resource-constrained environments (Raspberry Pi)
 
 ---
 
@@ -375,7 +375,9 @@ celery -A celery_config.celery_app flower
 
 ## 🚀 Deployment
 
-### Production Configuration
+### Production Setup (Raspberry Pi + Cloudflare Tunnel)
+
+The production backend is self-hosted on a Raspberry Pi with traffic routed through a Cloudflare Tunnel at `https://scribeapi.manitmishra.com`.
 
 ```bash
 # Set production environment
@@ -385,17 +387,14 @@ DEBUG=False
 # Configure CORS
 ALLOWED_ORIGINS=https://yourdomain.com,https://app.yourdomain.com
 
-# Optimize database pool
-# (Settings in database/base.py: pool_size=5, max_overflow=10)
-
 # Run with production server
-uvicorn main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 120
+uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 120
 ```
 
 ### Celery Worker Setup
 
 ```bash
-# Production worker (recommended settings for 512MB RAM)
+# Production worker (recommended settings for Raspberry Pi)
 celery -A celery_config.celery_app worker \
   --loglevel=info \
   --pool=solo \

@@ -18,7 +18,7 @@ def _create_engine():
     Create SQLAlchemy engine with NullPool for Supabase Transaction Pooler.
     - Eliminates double-pooling (app-side + server-side)
     - Prevents stale connection accumulation
-    - Optimizes for auto-scaling deployments (Render.com)
+    - Optimizes for single-server deployments (Raspberry Pi via Cloudflare Tunnel)
     - Connections are created per-request and immediately discarded
     - Connection pre-ping adds safety for Cloudflare tunnel stability
     """
