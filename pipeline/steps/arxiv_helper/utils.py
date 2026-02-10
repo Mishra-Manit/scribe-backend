@@ -70,7 +70,7 @@ def _search_arxiv_sync(
     try:
         client = arxiv.Client(
             page_size=max_results,      # Fetch max_results per page (efficient)
-            delay_seconds=0.5,          # Rate limiting: 0.5s between requests
+            delay_seconds=4,            # Rate limiting: 4s between requests (ArXiv recommends ~3s)
             num_retries=2 
         )
 

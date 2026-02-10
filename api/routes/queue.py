@@ -45,10 +45,10 @@ async def submit_batch(
                 detail="Maximum 100 items per batch"
             )
 
-        queue_item_ids = []
+        # Phase 1: Create all queue items in the database first
+        queue_items = []
 
         for item in batch_request.items:
-            # 1. Create QueueItem in database
             queue_item = QueueItem(
                 user_id=current_user.id,
                 recipient_name=item.recipient_name,
@@ -57,9 +57,15 @@ async def submit_batch(
                 status=QueueStatus.PENDING,
             )
             db.add(queue_item)
-            db.flush()  # Get the ID before committing
+            queue_items.append((queue_item, item))
 
-            # 2. Dispatch Celery task
+        db.flush()  # Assign IDs to all items
+        db.commit()  # Commit so items are visible to Celery workers
+
+        # Phase 2: Dispatch Celery tasks now that queue items exist in the DB
+        queue_item_ids = []
+
+        for queue_item, item in queue_items:
             task = generate_email_task.apply_async(
                 kwargs={
                     "queue_item_id": str(queue_item.id),
@@ -71,11 +77,10 @@ async def submit_batch(
                 queue="email_default"
             )
 
-            # 3. Store Celery task ID for potential fallback polling
             queue_item.celery_task_id = task.id
             queue_item_ids.append(str(queue_item.id))
 
-        db.commit()
+        db.commit()  # Persist celery_task_id references
 
         logfire.info(
             "Batch submitted to queue",
