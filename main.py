@@ -175,22 +175,22 @@ async def health_check() -> Dict[str, str]:
     }
 
 
-@app.get("/debug/cors", tags=["Health"])
-async def debug_cors() -> Dict:
-    """
-    Debug endpoint to verify CORS configuration.
+if settings.is_development:
+    @app.get("/debug/cors", tags=["Health"])
+    async def debug_cors() -> Dict:
+        """
+        Debug endpoint to verify CORS configuration.
 
-    Returns current CORS settings for troubleshooting.
-    Remove this endpoint in production or add authentication.
-    """
-    return {
-        "allowed_origins": settings.allowed_origins,
-        "origin_count": len(settings.allowed_origins),
-        "is_wildcard": "*" in settings.allowed_origins,
-        "environment": settings.environment,
-        "credentials_enabled": True,
-        "warning": "Wildcard origins violate CORS spec with credentials=True" if "*" in settings.allowed_origins else None,
-    }
+        Development only: hidden from production deployments.
+        """
+        return {
+            "allowed_origins": settings.allowed_origins,
+            "origin_count": len(settings.allowed_origins),
+            "is_wildcard": "*" in settings.allowed_origins,
+            "environment": settings.environment,
+            "credentials_enabled": True,
+            "warning": "Wildcard origins violate CORS spec with credentials=True" if "*" in settings.allowed_origins else None,
+        }
 
 
 @app.get("/", tags=["Root"])
