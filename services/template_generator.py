@@ -53,7 +53,7 @@ Generate a cold email template following all guidelines above."""
                     model=model,
                     system_prompt=system_prompt,
                     temperature=0.6,
-                    max_tokens=1500,
+                    max_tokens=7000,
                     retries=3,
                     timeout=45.0
                 )
