@@ -33,8 +33,8 @@ class EmailComposerStep(BasePipelineStep):
             system_prompt=SYSTEM_PROMPT,
             temperature=self.temperature,
             max_tokens=self.max_tokens,
-            retries=3,  # Agent handles retries internally
-            timeout=60.0
+            retries=3,
+            timeout=90.0
         )
 
     async def _validate_input(self, pipeline_data: PipelineData) -> Optional[str]:
