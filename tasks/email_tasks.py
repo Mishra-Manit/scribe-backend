@@ -27,7 +27,7 @@ JOB_STATUS_TO_CELERY_STATE = {
 }
 
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, max_retries=1)
 def generate_email_task(
     self,
     *,
@@ -121,6 +121,41 @@ def generate_email_task(
                 error=str(e)
             )
 
+    def reset_queue_item_for_retry() -> None:
+        """Reset queue item back to PENDING state before a retry attempt."""
+        if not queue_item_id:
+            return
+
+        try:
+            with get_db_context() as db:
+                item = db.query(QueueItem).filter(
+                    QueueItem.id == queue_item_id
+                ).first()
+
+                if not item:
+                    logfire.warning(
+                        "Queue item not found for retry reset",
+                        queue_item_id=queue_item_id
+                    )
+                    return
+
+                item.status = QueueStatus.PENDING
+                item.current_step = None
+                item.error_message = None
+                item.started_at = None
+                db.commit()
+
+                logfire.debug(
+                    "Queue item reset to pending for retry",
+                    queue_item_id=queue_item_id
+                )
+        except Exception as e:
+            logfire.error(
+                "Failed to reset queue item for retry",
+                queue_item_id=queue_item_id,
+                error=str(e)
+            )
+
     def _update_status(status: JobStatus, extra_meta: Optional[Dict[str, Any]] = None) -> None:
         """
         Persist task status/progress in Redis via Celery's backend.
@@ -205,6 +240,21 @@ def generate_email_task(
         except (StepExecutionError, PipelineExecutionError) as exc:
             failed_step = getattr(exc, "step_name", None)
             error_message = str(exc)
+
+            is_timeout = "timed out" in error_message.lower()
+            is_final_attempt = self.request.retries >= self.max_retries
+
+            if is_timeout and not is_final_attempt:
+                logfire.warning(
+                    "Pipeline timed out, scheduling retry",
+                    task_id=public_task_id,
+                    celery_id=celery_request_id,
+                    failed_step=failed_step,
+                    attempt=self.request.retries + 1,
+                    max_retries=self.max_retries,
+                )
+                reset_queue_item_for_retry()
+                raise self.retry(exc=exc)
 
             logfire.error(
                 "Pipeline execution failed",
