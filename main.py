@@ -15,26 +15,19 @@ from config import settings
 from database import check_db_connection, get_db_info
 from services.supabase import get_supabase_client_safe
 from observability.logfire_config import LogfireConfig
-from api.routes import user_router, email_router, template_router, queue_router
+from api.routes import user_router, email_router, template_router, queue_router, admin_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan manager.
-    Handles startup and shutdown events.
-    """
-    # Initialize Logfire first so we can use structured logging
     LogfireConfig.initialize(token=settings.logfire_token)
 
-    # Startup logging
     logfire.info(
         "Starting Scribe API Server",
         environment=settings.environment,
         debug=settings.debug,
     )
 
-    # Check database connection on startup with retries for transient failures
     logfire.info(
         "Database configuration",
         port=settings.db_port,
@@ -43,9 +36,7 @@ async def lifespan(app: FastAPI):
         connect_timeout=settings.db_connect_timeout,
     )
 
-    # Check database connection using shared retry logic
     async def check_db_with_logging():
-        """Check database connection and log result."""
         db_info = get_db_info()
         if db_info["status"] == "connected":
             logfire.info(
@@ -55,7 +46,6 @@ async def lifespan(app: FastAPI):
                 status=db_info["status"],
             )
         else:
-            # Raise OperationalError to trigger retry logic
             from sqlalchemy.exc import OperationalError
 
             error_msg = db_info.get("error", "Connection check failed")
@@ -83,7 +73,6 @@ async def lifespan(app: FastAPI):
         )
         db_info = None
 
-    # Check Supabase client initialization
     supabase = get_supabase_client_safe()
     if supabase:
         logfire.info("Supabase client initialized successfully")
@@ -93,7 +82,6 @@ async def lifespan(app: FastAPI):
             hint="Check SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env file",
         )
 
-    # Validate CORS configuration
     logfire.info(
         "CORS configuration",
         allowed_origins=settings.allowed_origins,
@@ -101,7 +89,6 @@ async def lifespan(app: FastAPI):
         environment=settings.environment,
     )
 
-    # Warn about potential CORS issues
     for origin in settings.allowed_origins:
         if origin == "*":
             if settings.is_production:
@@ -129,11 +116,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     logfire.info("Shutting down Scribe API Server")
 
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Scribe API",
     description="Backend API for Scribe - Cold email generation platform",
@@ -142,7 +127,6 @@ app = FastAPI(
     debug=settings.debug,
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -152,18 +136,9 @@ app.add_middleware(
 )
 
 
-# ============================================================================
-# Health Check Endpoints
-# ============================================================================
-
 @app.get("/health", tags=["Health"])
 async def health_check() -> Dict[str, str]:
-    """
-    Health check endpoint for load balancers and monitoring.
-
-    Returns:
-        dict: Health status of the application and database
-    """
+    """Health check endpoint for load balancers and monitoring."""
     db_connected = check_db_connection()
 
     return {
@@ -178,11 +153,7 @@ async def health_check() -> Dict[str, str]:
 if settings.is_development:
     @app.get("/debug/cors", tags=["Health"])
     async def debug_cors() -> Dict:
-        """
-        Debug endpoint to verify CORS configuration.
-
-        Development only: hidden from production deployments.
-        """
+        """Debug endpoint to verify CORS configuration (development only)."""
         return {
             "allowed_origins": settings.allowed_origins,
             "origin_count": len(settings.allowed_origins),
@@ -195,12 +166,6 @@ if settings.is_development:
 
 @app.get("/", tags=["Root"])
 async def root() -> Dict[str, str]:
-    """
-    Root endpoint - API information.
-
-    Returns:
-        dict: Basic API information
-    """
     return {
         "name": "Scribe API",
         "version": "1.0.0",
@@ -210,21 +175,11 @@ async def root() -> Dict[str, str]:
     }
 
 
-# ============================================================================
-# API Routers
-# ============================================================================
-
-# User management endpoints (authentication required)
 app.include_router(user_router)
-
-# Email generation endpoints (authentication required, uses Celery workers)
 app.include_router(email_router)
-
-# Template generation endpoints (authentication required, synchronous)
 app.include_router(template_router)
-
-# Queue management endpoints (authentication required)
 app.include_router(queue_router)
+app.include_router(admin_router)
 
 
 if __name__ == "__main__":
